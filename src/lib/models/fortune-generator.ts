@@ -17,9 +17,10 @@ const cohere = new CohereClient({
   token: process.env.COHERE_API_KEY || "",
 });
 
-// Different prompt templates for different scenarios
+// Different prompt templates for different modes
 const PROMPT_TEMPLATES = {
-  initial: `You are a mystic fortune teller. Based on this context: "{{INPUT}}", generate three types of predictions:
+  initial: {
+    predict: `You are a mystic fortune teller. Based on this context: "{{INPUT}}", generate three types of predictions:
       
 1. Three probability-based predictions about what might happen (realistic but uncertain, max 10 words each)
 2. Two action recommendations (beneficial advice, max 10 words each)
@@ -38,55 +39,83 @@ Format your response as a JSON object with the following structure:
 
 Only return the JSON object, nothing else.`,
 
-  probabilitySingle: `You are a mystic fortune teller predicting what might happen. Based on this context: "{{INPUT}}", generate one probability-based prediction (realistic but uncertain, maximum 10 words).
+    decide: `You are a decisive AI advisor. For this decision context: "{{INPUT}}", generate three types of guidance:
 
-It MUST be different from these existing predictions: "{{EXISTING}}".
-AVOID giving advice - just state what might happen.
-Focus on events rather than personal qualities.
+1. Three clear, definitive statements about what decision to make (be assertive and specific)
+2. Two concrete action steps to implement the decision (practical, immediate actions)
+3. Two potential risks or pitfalls to watch out for (specific concerns)
 
-Only return the prediction text, nothing else.`,
+Be direct and decisive - no ambiguity or uncertainty.
+Each statement must be actionable and specific to the context.
+Focus on clarity and confidence in the decision.
 
-  actionSingle: `You are a mystic fortune teller suggesting what someone should do. Based on this context: "{{INPUT}}", generate one action recommendation (beneficial advice, maximum 10 words).
+Format as JSON:
+{
+  "probabilities": ["decision1", "decision2", "decision3"],
+  "actions": ["step1", "step2"],
+  "random": ["risk1", "risk2"]
+}`,
 
-It MUST be different from these existing recommendations: "{{EXISTING}}".
-Make it practical, relevant, and specific to the context.
-Avoid general life advice that's too broad to be useful.
+    mog: `You are an elite performance coach. For this context: "{{INPUT}}", generate three types of guidance for maximum dominance:
 
-Only return the action recommendation text, nothing else.`,
+1. Three powerful statements about achieving superiority (focus on being the absolute best)
+2. Two dominant actions to assert leadership (aggressive, high-impact moves)
+3. Two threats to eliminate or overcome (frame challenges as opportunities to dominate)
 
-  randomSingle: `You are a mystic fortune teller predicting rare but possible negative scenarios. Based on this context: "{{INPUT}}", generate one unlikely negative scenario (maximum 10 words).
+Use confident, assertive language.
+Focus on power, excellence, and total victory.
+Each statement should emphasize superiority and dominance.
 
-IMPORTANT REQUIREMENTS:
-1. It MUST be completely different in topic and content from: "{{EXISTING}}"
-2. It should be unexpected but still plausible
-3. It should focus on a specific event, not vague consequences
-4. Avoid duplicating words or phrases from existing scenarios
-5. It MUST be different in structure from existing scenarios
-6. It should be a concrete scenario, not general advice
-7. Focus on what might happen, not what one should do
+Format as JSON:
+{
+  "probabilities": ["power1", "power2", "power3"],
+  "actions": ["move1", "move2"],
+  "random": ["threat1", "threat2"]
+}`,
+  },
 
-Only return the scenario text, no additional formatting.`,
+  probabilitySingle: {
+    predict:
+      'Generate a single likely prediction based on this context: "{{INPUT}}". Make it different from: {{EXISTING}}',
+    decide:
+      'Generate a single decisive statement about what to do for: "{{INPUT}}". Make it different from: {{EXISTING}}',
+    mog: 'Generate a single powerful statement about achieving dominance in: "{{INPUT}}". Make it different from: {{EXISTING}}',
+  },
 
-  randomBatch: `You are a mystic fortune teller predicting rare but possible negative events. Based on this context: "{{INPUT}}", generate {{COUNT}} completely different unlikely negative scenarios (maximum 10 words each).
+  actionSingle: {
+    predict:
+      'Generate a single recommended action based on this context: "{{INPUT}}". Make it different from: {{EXISTING}}',
+    decide:
+      'Generate a single concrete step to implement the decision for: "{{INPUT}}". Make it different from: {{EXISTING}}',
+    mog: 'Generate a single dominant action to assert superiority in: "{{INPUT}}". Make it different from: {{EXISTING}}',
+  },
 
-EXTREMELY IMPORTANT REQUIREMENTS:
-1. Each scenario MUST cover a completely different area of life or concern
-2. Each scenario MUST use different vocabulary and sentence structures
-3. Each scenario MUST focus on different types of risks
-4. No scenario should be similar to: "{{EXISTING}}"
-5. Each scenario should be unexpected but still plausible
-6. Each scenario should describe concrete events, not vague warnings
-7. Avoid repetitive structures like "You will..." in multiple scenarios
-8. Focus on what might happen, not what one should do
+  randomSingle: {
+    predict:
+      'Generate a single unlikely negative scenario based on this context: "{{INPUT}}". Make it different from: {{EXISTING}}',
+    decide:
+      'Generate a single specific risk to watch for in this decision: "{{INPUT}}". Make it different from: {{EXISTING}}',
+    mog: 'Generate a single threat to overcome and dominate in: "{{INPUT}}". Make it different from: {{EXISTING}}',
+  },
 
-Format as a JSON array of strings: ["scenario1", "scenario2", ...]
-Only return the JSON array, nothing else.`,
+  randomBatch: {
+    predict:
+      'Generate {{COUNT}} unique unlikely scenarios based on: "{{INPUT}}". Make them different from: {{EXISTING}}',
+    decide:
+      'Generate {{COUNT}} unique risks to watch for in: "{{INPUT}}". Make them different from: {{EXISTING}}',
+    mog: 'Generate {{COUNT}} unique threats to overcome in: "{{INPUT}}". Make them different from: {{EXISTING}}',
+  },
 };
 
 // Generate initial fortunes
-export async function generateFortunes(userInput: string): Promise<Fortunes> {
+export async function generateFortunes(
+  userInput: string,
+  mode: string = "predict"
+): Promise<Fortunes> {
   try {
-    const prompt = PROMPT_TEMPLATES.initial.replace("{{INPUT}}", userInput);
+    const prompt = PROMPT_TEMPLATES.initial[
+      mode as keyof typeof PROMPT_TEMPLATES.initial
+    ].replace("{{INPUT}}", userInput);
 
     const response = await cohere.generate({
       prompt,
@@ -121,13 +150,13 @@ export async function generateFortunes(userInput: string): Promise<Fortunes> {
     };
 
     // Check for duplicates within each category and fix if needed
-    await fixDuplicates(fortunes, userInput);
+    await fixDuplicates(fortunes, userInput, mode);
 
     return fortunes;
   } catch (error) {
     console.error("Failed to generate fortunes:", error);
     // Return fallback fortunes
-    return getFallbackFortunes();
+    return getFallbackFortunes(mode);
   }
 }
 
@@ -183,14 +212,17 @@ export async function generateBatchShuffles(
 async function generateRandomBatch(
   userInput: string,
   indices: number[],
-  currentPredictions: string[]
+  currentPredictions: string[],
+  mode: string = "predict"
 ): Promise<Record<number, string>> {
   const result: Record<number, string> = {};
   const existingPredictions = currentPredictions.filter(
     (_, i) => !indices.includes(i)
   );
 
-  const prompt = PROMPT_TEMPLATES.randomBatch
+  const prompt = PROMPT_TEMPLATES.randomBatch[
+    mode as keyof typeof PROMPT_TEMPLATES.initial
+  ]
     .replace("{{INPUT}}", userInput)
     .replace("{{COUNT}}", indices.length.toString())
     .replace("{{EXISTING}}", existingPredictions.join(", "));
@@ -237,7 +269,8 @@ async function generateRandomBatch(
             userInput,
             "random",
             dupeIndices,
-            [...currentPredictions, ...Object.values(result)]
+            [...currentPredictions, ...Object.values(result)],
+            mode
           );
 
           // Merge the replacements with the results
@@ -260,7 +293,8 @@ async function generateRandomBatch(
     userInput,
     "random",
     indices,
-    currentPredictions
+    currentPredictions,
+    mode
   );
 }
 
@@ -269,7 +303,8 @@ async function generateIndividualShuffles(
   userInput: string,
   category: string,
   indices: number[],
-  currentPredictions: string[]
+  currentPredictions: string[],
+  mode: string = "predict"
 ): Promise<Record<number, string>> {
   const result: Record<number, string> = {};
   const allExistingPredictions = [...currentPredictions];
@@ -290,7 +325,8 @@ async function generateIndividualShuffles(
       newPrediction = await generateSinglePrediction(
         userInput,
         category,
-        otherPredictions
+        otherPredictions,
+        mode
       );
       attempts++;
     } while (
@@ -310,11 +346,13 @@ async function generateIndividualShuffles(
 async function generateSinglePrediction(
   userInput: string,
   category: string,
-  existingPredictions: string[] = []
+  existingPredictions: string[] = [],
+  mode: string = "predict"
 ): Promise<string> {
   try {
     // Select the appropriate template based on category
     let templateKey: keyof typeof PROMPT_TEMPLATES;
+    let templateMode: string;
 
     switch (category) {
       case "probabilities":
@@ -330,7 +368,9 @@ async function generateSinglePrediction(
         throw new Error("Invalid category");
     }
 
-    const prompt = PROMPT_TEMPLATES[templateKey]
+    const prompt = PROMPT_TEMPLATES[templateKey][
+      mode as keyof typeof PROMPT_TEMPLATES.initial
+    ]
       .replace("{{INPUT}}", userInput)
       .replace("{{EXISTING}}", existingPredictions.join(", "));
 
@@ -362,14 +402,15 @@ async function generateSinglePrediction(
   } catch (error) {
     console.error(`Error generating single prediction for ${category}:`, error);
     // Return a fallback prediction
-    return getRandomFallback(category, existingPredictions);
+    return getRandomFallback(category, existingPredictions, mode);
   }
 }
 
 // Fix any duplicates in the generated fortunes
 async function fixDuplicates(
   fortunes: Fortunes,
-  userInput: string
+  userInput: string,
+  mode: string = "predict"
 ): Promise<void> {
   const categories: (keyof Fortunes)[] = ["probabilities", "actions", "random"];
 
@@ -388,7 +429,8 @@ async function fixDuplicates(
         const newPrediction = await generateSinglePrediction(
           userInput,
           category,
-          existingPredictions
+          existingPredictions,
+          mode
         );
         existingPredictions.push(newPrediction);
       }
@@ -416,7 +458,8 @@ async function fixDuplicates(
         const newPrediction = await generateSinglePrediction(
           userInput,
           category,
-          finalPredictions
+          finalPredictions,
+          mode
         );
         finalPredictions[index] = newPrediction;
       }
@@ -463,9 +506,10 @@ function areSimilar(a: string, b: string): boolean {
 // Get a random fallback prediction for a category
 function getRandomFallback(
   category: string,
-  existingPredictions: string[] = []
+  existingPredictions: string[] = [],
+  mode: string = "predict"
 ): string {
-  const fallbacks = getFallbacksByCategory(category);
+  const fallbacks = getFallbacksByCategory(category, mode);
 
   // Filter out any existing predictions or similar content
   const availableFallbacks = fallbacks.filter((fallback) => {
@@ -505,76 +549,80 @@ function getRandomFallback(
 }
 
 // Get fallback predictions for a specific category
-function getFallbacksByCategory(category: string): string[] {
+function getFallbacksByCategory(
+  category: string,
+  mode: string = "predict"
+): string[] {
   const fallbacks = {
-    probabilities: [
-      "New technology will disrupt your industry within months.",
-      "A collaboration opportunity will present itself soon.",
-      "Financial market shifts favor your current position.",
-      "Your skills will become more valuable in six months.",
-      "Major reorganization will impact your team by year-end.",
-      "Remote work becomes permanent for your position.",
-      "Competitor acquisition changes market dynamics significantly.",
-      "Demand for your expertise increases unexpectedly.",
-      "New industry regulations create growth opportunities.",
-      "Leadership changes open advancement possibilities.",
-    ],
-    actions: [
-      "Invest in learning one new skill this quarter.",
-      "Strengthen your network in unexpected industries.",
-      "Document your achievements for future opportunities.",
-      "Build a personal brand around unique expertise.",
-      "Set boundaries to prevent career burnout.",
-      "Diversify your income streams now.",
-      "Create metrics to demonstrate your value.",
-      "Lead a high-visibility project to increase recognition.",
-      "Build deeper relationships with key stakeholders.",
-      "Reposition your expertise for emerging market needs.",
-    ],
-    random: [
-      "Data breach exposes sensitive information you shared online.",
-      "Unexpected health concern requires immediate attention.",
-      "Key team member suddenly leaves, shifting project responsibilities.",
-      "Critical computer failure loses weeks of work.",
-      "Industry regulation change obsoletes current skill set.",
-      "Legal oversight costs you significant financial damages.",
-      "Home damage from unexpected natural event.",
-      "Accidental disclosure undermines client relationship trust.",
-      "Vehicle malfunction leads to missed opportunity.",
-      "Critical career opportunity missed due to scheduling error.",
-      "Misinterpreted communication damages important relationship.",
-      "Identity theft causes financial complications lasting months.",
-      "Unexpected relocation requirement disrupts family plans.",
-      "Budget cuts eliminate resources needed for success.",
-      "Technical failure during presentation damages credibility.",
-      "Healthcare costs exceed emergency savings significantly.",
-      "Personal data accidentally shared with wrong party.",
-      "Rejected loan application delays important plans.",
-      "Reputation damaged by association with controversial person.",
-      "Supply chain disruption leaves projects incomplete indefinitely.",
-    ],
+    predict: {
+      probabilities: [
+        "New opportunities will present themselves soon",
+        "A significant change is approaching",
+        "Your efforts will be recognized",
+      ],
+      actions: [
+        "Take time to reflect on your goals",
+        "Reach out to someone you trust",
+        "Consider a new approach",
+      ],
+      random: [
+        "An unexpected event disrupts your plans",
+        "A surprising coincidence changes everything",
+        "A forgotten connection resurfaces",
+      ],
+    },
+    decide: {
+      probabilities: [
+        "Choose the bold option without hesitation",
+        "Move forward with the new opportunity",
+        "Take the leadership position offered",
+      ],
+      actions: [
+        "Make the decision final by tomorrow",
+        "Communicate your choice clearly to all parties",
+        "Begin implementation immediately",
+      ],
+      random: [
+        "Key stakeholder may resist the change",
+        "Timeline might be more aggressive than expected",
+        "Resource constraints could limit options",
+      ],
+    },
+    mog: {
+      probabilities: [
+        "Your superiority will be undeniable",
+        "Others will follow your lead naturally",
+        "Victory is within your grasp",
+      ],
+      actions: [
+        "Assert dominance in every interaction",
+        "Eliminate all signs of weakness",
+        "Showcase your elite performance",
+      ],
+      random: [
+        "Competitors attempt to undermine your position",
+        "Weak allies hold back your progress",
+        "Lesser talents try to copy your success",
+      ],
+    },
   };
 
   return (
-    fallbacks[category as keyof typeof fallbacks] || fallbacks.probabilities
+    fallbacks[mode as keyof typeof fallbacks]?.[
+      category as keyof typeof fallbacks.predict
+    ] || fallbacks.predict[category as keyof typeof fallbacks.predict]
   );
 }
 
 // Get full set of fallback fortunes
-function getFallbackFortunes(): Fortunes {
+function getFallbackFortunes(mode: string = "predict"): Fortunes {
+  const fallbacks = getFallbacksByCategory("probabilities", mode);
+  const actionFallbacks = getFallbacksByCategory("actions", mode);
+  const randomFallbacks = getFallbacksByCategory("random", mode);
+
   return {
-    probabilities: [
-      "Market trends indicate potential growth in your sector.",
-      "A professional opportunity will present itself soon.",
-      "Your current path leads to financial stability.",
-    ],
-    actions: [
-      "Diversify your investments for long-term security.",
-      "Build connections in your field of interest.",
-    ],
-    random: [
-      "Unexpected travel disruption may affect future plans.",
-      "A technological failure could impact personal data.",
-    ],
+    probabilities: fallbacks.slice(0, 3),
+    actions: actionFallbacks.slice(0, 2),
+    random: randomFallbacks.slice(0, 2),
   };
 }

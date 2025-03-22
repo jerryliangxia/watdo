@@ -2,6 +2,61 @@
 
 import { useState, useRef } from "react";
 
+interface Mode {
+  id: string;
+  name: string;
+  icon: string;
+  description: string;
+}
+
+const MODES: Mode[] = [
+  {
+    id: "predict",
+    name: "Predict",
+    icon: "🔮",
+    description: "See potential futures",
+  },
+  {
+    id: "decide",
+    name: "Decide",
+    icon: "⚡",
+    description: "Get decisive answers",
+  },
+  {
+    id: "mog",
+    name: "Mog",
+    icon: "👑",
+    description: "Become the best version",
+  },
+];
+
+function ModeSelector({
+  selectedMode,
+  onSelectMode,
+}: {
+  selectedMode: string;
+  onSelectMode: (mode: string) => void;
+}) {
+  return (
+    <div className="flex gap-2 overflow-x-auto pb-4 mb-4 -mx-6 px-6">
+      {MODES.map((mode) => (
+        <button
+          key={mode.id}
+          onClick={() => onSelectMode(mode.id)}
+          className={`flex flex-col items-center min-w-[72px] p-3 rounded-xl transition-colors ${
+            selectedMode === mode.id
+              ? "bg-[#0066cc] text-white"
+              : "bg-[#f5f5f7] dark:bg-[#2d2d2f] text-[#1d1d1f] dark:text-white hover:bg-[#e5e5ea] dark:hover:bg-[#3d3d3f]"
+          }`}
+        >
+          <span className="text-2xl mb-1">{mode.icon}</span>
+          <span className="text-xs font-medium">{mode.name}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export default function Home() {
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-[#f5f5f7] dark:bg-[#1d1d1f] font-sans p-6">
@@ -23,11 +78,21 @@ export default function Home() {
 
 function FortuneTeller() {
   const [input, setInput] = useState("");
-  const [fortunes, setFortunes] = useState<null | {
-    probabilities: string[];
-    actions: string[];
-    random: string[];
-  }>(null);
+  const [selectedMode, setSelectedMode] = useState("predict");
+  const [fortunesByMode, setFortunesByMode] = useState<
+    Record<
+      string,
+      {
+        probabilities: string[];
+        actions: string[];
+        random: string[];
+      } | null
+    >
+  >({
+    predict: null,
+    decide: null,
+    mog: null,
+  });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [shufflingItems, setShufflingItems] = useState<Record<string, boolean>>(
@@ -38,6 +103,11 @@ function FortuneTeller() {
   const pendingShuffles = useRef<{
     [key: string]: { indices: number[]; timeoutId: NodeJS.Timeout | null };
   }>({});
+
+  // Just switch mode without clearing fortunes
+  const handleModeChange = (mode: string) => {
+    setSelectedMode(mode);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -53,7 +123,10 @@ function FortuneTeller() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ prompt: input }),
+        body: JSON.stringify({
+          prompt: input,
+          mode: selectedMode,
+        }),
       });
 
       if (!response.ok) {
@@ -62,7 +135,11 @@ function FortuneTeller() {
       }
 
       const data = await response.json();
-      setFortunes(data);
+      // Update fortunes for current mode only
+      setFortunesByMode((prev) => ({
+        ...prev,
+        [selectedMode]: data,
+      }));
       setShufflingItems({});
       // Clear any pending shuffles
       Object.values(pendingShuffles.current).forEach((item) => {
@@ -77,8 +154,11 @@ function FortuneTeller() {
     }
   };
 
+  // Get current fortunes based on selected mode
+  const currentFortunes = fortunesByMode[selectedMode];
+
   const processBatchShuffle = async (category: string) => {
-    if (!input.trim() || !fortunes) return;
+    if (!input.trim() || !currentFortunes) return;
 
     const pendingBatch = pendingShuffles.current[category];
     if (!pendingBatch || pendingBatch.indices.length === 0) return;
@@ -102,7 +182,7 @@ function FortuneTeller() {
     try {
       // Get the current predictions for this category to ensure uniqueness
       const currentCategoryPredictions =
-        fortunes[category as keyof typeof fortunes];
+        currentFortunes[category as keyof typeof currentFortunes];
 
       const response = await fetch("/api/fortune", {
         method: "POST",
@@ -124,57 +204,25 @@ function FortuneTeller() {
       const data = await response.json();
 
       // Update the predictions in the fortunes state
-      setFortunes((prev) => {
-        if (!prev) return prev;
-
-        // Create a copy of the current category predictions
-        const updatedCategory = [...prev[category as keyof typeof prev]];
-
-        // Update each predicted item
-        Object.entries(data.predictions).forEach(([indexStr, prediction]) => {
-          const index = parseInt(indexStr, 10);
-          updatedCategory[index] = prediction as string;
-        });
-
-        // Double-check for any duplicates and replace them if found
-        const seen = new Set<string>();
-        const finalCategory = updatedCategory.map((item, i) => {
-          // If this item was not supposed to be shuffled, keep it as is
-          if (!indices.includes(i)) {
-            seen.add(item.toLowerCase());
-            return item;
-          }
-
-          // If this item is a duplicate after shuffling, try to use the provided prediction
-          // or mark it for another shuffle attempt
-          if (seen.has(item.toLowerCase())) {
-            // Use the specific prediction if available
-            const specificPrediction = data.predictions[i] as
-              | string
-              | undefined;
-            if (
-              specificPrediction &&
-              !seen.has(specificPrediction.toLowerCase())
-            ) {
-              seen.add(specificPrediction.toLowerCase());
-              return specificPrediction;
-            }
-
-            // Mark for another shuffle attempt on next render by keeping it as is
-            // This is rare but could happen with API limitations
-            return item + " (Shuffling...)";
-          }
-
-          // Not a duplicate, add to seen and return
-          seen.add(item.toLowerCase());
-          return item;
-        });
-
-        return {
-          ...prev,
-          [category]: finalCategory,
-        };
-      });
+      setFortunesByMode((prev) => ({
+        ...prev,
+        [selectedMode]: {
+          ...prev[selectedMode]!,
+          [category as keyof (typeof prev)[typeof selectedMode]]:
+            Object.entries(data.predictions).reduce(
+              (acc: string[], [indexStr, prediction]) => {
+                const index = parseInt(indexStr, 10);
+                acc[index] = prediction as string;
+                return acc;
+              },
+              [
+                ...prev[selectedMode]![
+                  category as keyof (typeof prev)[typeof selectedMode]
+                ],
+              ]
+            ),
+        },
+      }));
     } catch (err) {
       console.error("Error shuffling predictions:", err);
     } finally {
@@ -188,7 +236,7 @@ function FortuneTeller() {
   };
 
   const handleShuffleItem = (category: string, index: number) => {
-    if (!input.trim() || !fortunes) return;
+    if (!input.trim() || !currentFortunes) return;
 
     // Add this index to the pending shuffles
     if (!pendingShuffles.current[category]) {
@@ -215,9 +263,10 @@ function FortuneTeller() {
   };
 
   const handleShuffleAll = (category: string) => {
-    if (!input.trim() || !fortunes) return;
+    if (!input.trim() || !currentFortunes) return;
 
-    const categoryItems = fortunes[category as keyof typeof fortunes];
+    const categoryItems =
+      currentFortunes[category as keyof typeof currentFortunes];
     if (!Array.isArray(categoryItems)) return;
 
     // Add all indices to pending shuffles
@@ -244,13 +293,21 @@ function FortuneTeller() {
 
   return (
     <div className="p-6">
+      <ModeSelector
+        selectedMode={selectedMode}
+        onSelectMode={handleModeChange}
+      />
       <form onSubmit={handleSubmit} className="mb-6">
         <div className="relative">
           <input
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value.slice(0, 20))}
-            placeholder="Enter your context..."
+            placeholder={
+              selectedMode === "decide"
+                ? "What decision do you need help with?"
+                : "Enter your context..."
+            }
             maxLength={20}
             className="w-full bg-[#f5f5f7] dark:bg-[#2d2d2f] rounded-lg border-none px-4 py-3 text-[#1d1d1f] dark:text-white placeholder-[#86868b] focus:outline-none focus:ring-2 focus:ring-[#0066cc]"
           />
@@ -264,7 +321,13 @@ function FortuneTeller() {
           disabled={!input.trim() || isLoading}
           className="mt-4 w-full bg-[#0066cc] hover:bg-[#0055b3] text-white font-medium py-3 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {isLoading ? "Consulting the stars..." : "Reveal My Fortune"}
+          {isLoading
+            ? "Consulting the stars..."
+            : selectedMode === "decide"
+            ? "Make Decision"
+            : selectedMode === "mog"
+            ? "Show Path to Victory"
+            : "Reveal My Future"}
         </button>
       </form>
 
@@ -274,13 +337,31 @@ function FortuneTeller() {
         </div>
       )}
 
-      {fortunes && (
+      {currentFortunes && (
         <div className="space-y-6 animate-fade-in">
           <FortuneSection
-            title="What might happen"
-            items={fortunes.probabilities}
-            icon="⭐"
-            description="Based on historical probabilities"
+            title={
+              selectedMode === "decide"
+                ? "The Decision"
+                : selectedMode === "mog"
+                ? "Your Potential"
+                : "What might happen"
+            }
+            items={currentFortunes.probabilities}
+            icon={
+              selectedMode === "decide"
+                ? "⚡"
+                : selectedMode === "mog"
+                ? "👑"
+                : "⭐"
+            }
+            description={
+              selectedMode === "decide"
+                ? "Clear path forward"
+                : selectedMode === "mog"
+                ? "Your path to excellence"
+                : "Based on historical probabilities"
+            }
             category="probabilities"
             onShuffleItem={handleShuffleItem}
             onShuffleAll={handleShuffleAll}
@@ -288,10 +369,28 @@ function FortuneTeller() {
           />
 
           <FortuneSection
-            title="What you should do"
-            items={fortunes.actions}
-            icon="🧭"
-            description="Profitable and progressive actions"
+            title={
+              selectedMode === "decide"
+                ? "Next Steps"
+                : selectedMode === "mog"
+                ? "Power Moves"
+                : "What you should do"
+            }
+            items={currentFortunes.actions}
+            icon={
+              selectedMode === "decide"
+                ? "🎯"
+                : selectedMode === "mog"
+                ? "💪"
+                : "🧭"
+            }
+            description={
+              selectedMode === "decide"
+                ? "Actions to implement the decision"
+                : selectedMode === "mog"
+                ? "Assert your dominance"
+                : "Profitable and progressive actions"
+            }
             category="actions"
             onShuffleItem={handleShuffleItem}
             onShuffleAll={handleShuffleAll}
@@ -299,10 +398,28 @@ function FortuneTeller() {
           />
 
           <FortuneSection
-            title="Unlikely dark possibilities"
-            items={fortunes.random}
-            icon="🔮"
-            description="Rare but possible scenarios (0.1% chance)"
+            title={
+              selectedMode === "decide"
+                ? "Watch Out For"
+                : selectedMode === "mog"
+                ? "Threats to Eliminate"
+                : "Unlikely dark possibilities"
+            }
+            items={currentFortunes.random}
+            icon={
+              selectedMode === "decide"
+                ? "⚠️"
+                : selectedMode === "mog"
+                ? "🎯"
+                : "🔮"
+            }
+            description={
+              selectedMode === "decide"
+                ? "Potential pitfalls to avoid"
+                : selectedMode === "mog"
+                ? "Overcome these challenges"
+                : "Rare but possible scenarios (0.1% chance)"
+            }
             category="random"
             onShuffleItem={handleShuffleItem}
             onShuffleAll={handleShuffleAll}

@@ -7,7 +7,13 @@ import {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { prompt, category, indices, currentPredictions } = body;
+    const {
+      prompt,
+      category,
+      indices,
+      currentPredictions,
+      mode = "predict",
+    } = body;
 
     // Validate input
     if (!prompt || typeof prompt !== "string") {
@@ -32,13 +38,14 @@ export async function POST(req: NextRequest) {
         prompt,
         category,
         indices,
-        currentPredictions
+        currentPredictions,
+        mode
       );
 
       return NextResponse.json(result);
     } else {
       // This is a request for initial fortune generation
-      const fortunes = await generateFortunes(prompt);
+      const fortunes = await generateFortunes(prompt, mode);
       return NextResponse.json(fortunes);
     }
   } catch (_error) {
