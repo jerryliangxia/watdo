@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useRef } from "react";
-import Image from "next/image";
 
 export default function Home() {
   return (
@@ -17,10 +16,6 @@ export default function Home() {
         </div>
 
         <FortuneTeller />
-
-        <div className="px-6 py-4 text-xs text-center text-[#86868b] dark:text-[#a1a1a6] border-t border-[#e5e5e7] dark:border-[#2d2d2f]">
-          Developed with Apple design principles
-        </div>
       </div>
     </div>
   );
@@ -58,7 +53,7 @@ function FortuneTeller() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ userInput: input }),
+        body: JSON.stringify({ prompt: input }),
       });
 
       if (!response.ok) {
@@ -67,7 +62,7 @@ function FortuneTeller() {
       }
 
       const data = await response.json();
-      setFortunes(data.fortunes);
+      setFortunes(data);
       setShufflingItems({});
       // Clear any pending shuffles
       Object.values(pendingShuffles.current).forEach((item) => {
@@ -115,9 +110,9 @@ function FortuneTeller() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          userInput: input,
-          shuffleCategory: category,
-          shuffleIndices: indices,
+          prompt: input,
+          category: category,
+          indices: indices,
           currentPredictions: currentCategoryPredictions,
         }),
       });
@@ -254,13 +249,13 @@ function FortuneTeller() {
           <input
             type="text"
             value={input}
-            onChange={(e) => setInput(e.target.value.slice(0, 100))}
+            onChange={(e) => setInput(e.target.value.slice(0, 20))}
             placeholder="Enter your context..."
-            maxLength={100}
+            maxLength={20}
             className="w-full bg-[#f5f5f7] dark:bg-[#2d2d2f] rounded-lg border-none px-4 py-3 text-[#1d1d1f] dark:text-white placeholder-[#86868b] focus:outline-none focus:ring-2 focus:ring-[#0066cc]"
           />
           <div className="absolute right-3 bottom-3 text-xs text-[#86868b]">
-            {input.length}/100
+            {input.length}/20
           </div>
         </div>
 
