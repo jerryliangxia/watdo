@@ -15,11 +15,18 @@ import {
   applyEdgeChanges,
   useReactFlow,
   ReactFlowProvider,
-  Rect,
 } from "@xyflow/react";
 import dagre from "dagre";
 import "@xyflow/react/dist/style.css";
 import EditableNode from "@/components/EditableNode";
+
+interface FortuneResponse {
+  fortunes: {
+    probabilities: string[];
+    actions: string[];
+    random: string[];
+  };
+}
 
 const nodeTypes = {
   editable: EditableNode as any,
@@ -30,10 +37,11 @@ const initialNodes: Node[] = [
     id: "1",
     type: "editable",
     data: {
-      label: "Click Branch to expand",
+      label: "Enter your question...",
       onChange: (newLabel: string) => console.log("Node 1:", newLabel),
       onBranch: () => console.log("Branch clicked for node 1"),
       hasBranches: false,
+      nodeType: "prompt",
     },
     position: { x: 0, y: 0 },
   },
@@ -49,14 +57,21 @@ const getLayoutedElements = (
   direction = "LR"
 ) => {
   const isHorizontal = direction === "LR";
-  dagreGraph.setGraph({ rankdir: direction });
+  dagreGraph.setGraph({
+    rankdir: direction,
+    nodesep: 150, // Vertical spacing between nodes in the same rank
+    ranksep: 200, // Horizontal spacing between ranks
+    edgesep: 100, // Minimum spacing between edges
+  });
 
   // Clear the graph
   dagreGraph.nodes().forEach((n) => dagreGraph.removeNode(n));
 
-  // Add nodes to the graph
+  // Add nodes to the graph with different sizes based on type
   nodes.forEach((node) => {
-    dagreGraph.setNode(node.id, { width: 300, height: 60 });
+    const width = node.data.nodeType === "predictions" ? 400 : 300;
+    const height = node.data.nodeType === "predictions" ? 200 : 100;
+    dagreGraph.setNode(node.id, { width, height });
   });
 
   // Add edges to the graph
@@ -70,11 +85,13 @@ const getLayoutedElements = (
   // Get the positioned nodes
   const layoutedNodes = nodes.map((node) => {
     const nodeWithPosition = dagreGraph.node(node.id);
+    const width = node.data.nodeType === "predictions" ? 400 : 300;
+    const height = node.data.nodeType === "predictions" ? 200 : 100;
     return {
       ...node,
       position: {
-        x: nodeWithPosition.x - 150, // center the node (width/2)
-        y: nodeWithPosition.y - 30, // center the node (height/2)
+        x: nodeWithPosition.x - width / 2,
+        y: nodeWithPosition.y - height / 2,
       },
     };
   });
@@ -103,7 +120,9 @@ function Flow() {
 
   const getChildNodeIds = useCallback(
     (nodeId: string): string[] => {
-      const immediateChildren = [`${nodeId}-1`, `${nodeId}-2`, `${nodeId}-3`];
+      const predictionId = `${nodeId}-predictions`;
+      const actionIds = [0, 1].map((i) => `${nodeId}-action-${i}`);
+      const immediateChildren = [predictionId, ...actionIds];
       const allChildren = [...immediateChildren];
 
       immediateChildren.forEach((childId) => {
@@ -124,28 +143,41 @@ function Flow() {
       );
       if (relevantNodes.length === 0) return;
 
-      // Calculate the bounding box
       const xMin = Math.min(...relevantNodes.map((n) => n.position.x));
-      const xMax = Math.max(...relevantNodes.map((n) => n.position.x + 300)); // node width
+      const xMax = Math.max(...relevantNodes.map((n) => n.position.x + 300));
       const yMin = Math.min(...relevantNodes.map((n) => n.position.y));
-      const yMax = Math.max(...relevantNodes.map((n) => n.position.y + 60)); // node height
+      const yMax = Math.max(...relevantNodes.map((n) => n.position.y + 60));
 
-      // Add some padding
       const padding = 50;
-      const viewBox: Rect = {
-        x: xMin - padding,
-        y: yMin - padding,
-        width: xMax - xMin + padding * 2,
-        height: yMax - yMin + padding * 2,
-      };
-
-      fitView({ duration: 800, padding: 0.1, viewBox });
+      fitView({
+        duration: 800,
+        padding: 0.1,
+        minZoom: 0.5,
+        maxZoom: 1.5,
+        nodes: relevantNodes,
+      });
     },
     [getNodes, fitView]
   );
 
+  const getFortune = async (prompt: string): Promise<FortuneResponse> => {
+    const response = await fetch("/api/fortune", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ userInput: prompt }),
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to get fortune");
+    }
+
+    return response.json();
+  };
+
   const handleBranch = useCallback(
-    (nodeId: string) => {
+    async (nodeId: string) => {
       if (branchedNodes.has(nodeId)) {
         // Remove all child nodes and their edges recursively
         const childNodeIds = getChildNodeIds(nodeId);
@@ -164,68 +196,87 @@ function Flow() {
           return newSet;
         });
       } else {
-        // Create new branches
-        const newNodes: Node[] = [
-          {
-            id: `${nodeId}-1`,
-            type: "editable",
-            data: {
-              label: "Branch 1",
-              onChange: (newLabel: string) =>
-                console.log(`${nodeId}-1:`, newLabel),
-              onBranch: () => handleBranch(`${nodeId}-1`),
-              hasBranches: false,
-            },
-            position: { x: 0, y: 0 },
-          },
-          {
-            id: `${nodeId}-2`,
-            type: "editable",
-            data: {
-              label: "Branch 2",
-              onChange: (newLabel: string) =>
-                console.log(`${nodeId}-2:`, newLabel),
-              onBranch: () => handleBranch(`${nodeId}-2`),
-              hasBranches: false,
-            },
-            position: { x: 0, y: 0 },
-          },
-          {
-            id: `${nodeId}-3`,
-            type: "editable",
-            data: {
-              label: "Branch 3",
-              onChange: (newLabel: string) =>
-                console.log(`${nodeId}-3:`, newLabel),
-              onBranch: () => handleBranch(`${nodeId}-3`),
-              hasBranches: false,
-            },
-            position: { x: 0, y: 0 },
-          },
-        ];
+        try {
+          // Get the current node's data
+          const currentNode = nodes.find((n) => n.id === nodeId);
+          if (!currentNode) return;
 
-        const newEdges: Edge[] = [
-          { id: `e${nodeId}-1`, source: nodeId, target: `${nodeId}-1` },
-          { id: `e${nodeId}-2`, source: nodeId, target: `${nodeId}-2` },
-          { id: `e${nodeId}-3`, source: nodeId, target: `${nodeId}-3` },
-        ];
+          // If it's a prompt node or an action node, get a new fortune
+          if (
+            currentNode.data.nodeType === "prompt" ||
+            currentNode.data.nodeType === "action"
+          ) {
+            const fortune = await getFortune(currentNode.data.label);
 
-        const childIds = [`${nodeId}-1`, `${nodeId}-2`, `${nodeId}-3`];
+            // Create combined predictions node
+            const predictionsNode = {
+              id: `${nodeId}-predictions`,
+              type: "editable",
+              data: {
+                label: [
+                  "Probabilities:",
+                  ...fortune.fortunes.probabilities.map((p) => `• ${p}`),
+                  "\nPotential Risks:",
+                  ...fortune.fortunes.random.map((r) => `• ${r}`),
+                ].join("\n"),
+                nodeType: "predictions",
+                hasBranches: false,
+              },
+              position: { x: 0, y: 0 },
+            };
 
-        setNodes((nds) => {
-          const updatedNodes = [...nds, ...newNodes];
-          const layoutedNodes = getLayoutedElements(updatedNodes, [
-            ...edges,
-            ...newEdges,
-          ]);
-          setTimeout(() => focusOnNodes([nodeId, ...childIds]), 50);
-          return layoutedNodes;
-        });
-        setEdges((eds) => [...eds, ...newEdges]);
-        setBranchedNodes((prev) => new Set([...prev, nodeId]));
+            // Create action nodes with unique IDs
+            const actionNodes = fortune.fortunes.actions.map(
+              (action, index) => ({
+                id: `${nodeId}-action-${index}`,
+                type: "editable",
+                data: {
+                  label: action,
+                  nodeType: "action",
+                  hasBranches: true,
+                },
+                position: { x: 0, y: 0 },
+              })
+            );
+
+            const newNodes = [predictionsNode, ...actionNodes];
+            const newEdges = [
+              // Edge from parent to predictions
+              {
+                id: `e-${nodeId}-predictions`,
+                source: nodeId,
+                target: predictionsNode.id,
+              },
+              // Edges from predictions to actions
+              ...actionNodes.map((node) => ({
+                id: `e-predictions-${node.id}`,
+                source: predictionsNode.id,
+                target: node.id,
+              })),
+            ];
+
+            setNodes((nds) => {
+              const updatedNodes = [...nds, ...newNodes];
+              const layoutedNodes = getLayoutedElements(updatedNodes, [
+                ...edges,
+                ...newEdges,
+              ]);
+              setTimeout(
+                () => focusOnNodes([nodeId, ...newNodes.map((n) => n.id)]),
+                50
+              );
+              return layoutedNodes;
+            });
+            setEdges((eds) => [...eds, ...newEdges]);
+            setBranchedNodes((prev) => new Set([...prev, nodeId]));
+          }
+        } catch (error) {
+          console.error("Error getting fortune:", error);
+          // You might want to show an error message to the user here
+        }
       }
     },
-    [branchedNodes, getChildNodeIds, edges, focusOnNodes]
+    [branchedNodes, getChildNodeIds, edges, focusOnNodes, nodes]
   );
 
   const updateNodeData = useCallback((nodeId: string, newLabel: string) => {
@@ -261,7 +312,8 @@ function Flow() {
           ...node.data,
           onChange: (newLabel: string) => updateNodeData(node.id, newLabel),
           onBranch: () => handleBranch(node.id),
-          hasBranches: branchedNodes.has(node.id),
+          hasBranches:
+            node.data.nodeType === "prompt" || node.data.nodeType === "action",
         },
       }))}
       edges={edges}
@@ -272,8 +324,6 @@ function Flow() {
       fitView
     >
       <Background />
-      <Controls />
-      <MiniMap />
     </ReactFlow>
   );
 }
