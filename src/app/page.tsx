@@ -1,103 +1,159 @@
+"use client";
+
+import { useState } from "react";
 import Image from "next/image";
 
 export default function Home() {
   return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm/6 text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-[family-name:var(--font-geist-mono)] font-semibold">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
-
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+    <div className="min-h-screen flex flex-col items-center justify-center bg-[#f5f5f7] dark:bg-[#1d1d1f] font-sans p-6">
+      <div className="w-full max-w-md bg-white dark:bg-[#111113] rounded-2xl shadow-lg overflow-hidden">
+        <div className="p-6 pb-0">
+          <h1 className="text-2xl font-semibold text-[#1d1d1f] dark:text-white mb-1">
+            Fortune Teller
+          </h1>
+          <p className="text-sm text-[#86868b] dark:text-[#a1a1a6] mb-6">
+            Enter your context to reveal your future
+          </p>
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
+
+        <FortuneTeller />
+
+        <div className="px-6 py-4 text-xs text-center text-[#86868b] dark:text-[#a1a1a6] border-t border-[#e5e5e7] dark:border-[#2d2d2f]">
+          Developed with Apple design principles
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FortuneTeller() {
+  const [input, setInput] = useState("");
+  const [fortunes, setFortunes] = useState<null | {
+    probabilities: string[];
+    actions: string[];
+    random: string[];
+  }>(null);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!input.trim()) return;
+
+    setIsLoading(true);
+
+    // Simulate fortune generation
+    setTimeout(() => {
+      // Example responses - in a real app, these would come from an API based on the input
+      setFortunes({
+        // 3 probability-based predictions (accurate, historical, max 10 words)
+        probabilities: [
+          "Remote work positions will decrease by 18% next quarter.",
+          "Market volatility will impact your sector within 45 days.",
+          "Three competitors will merge before year's end.",
+        ],
+        // 2 action recommendations (profitable/progressive, max 10 words)
+        actions: [
+          "Diversify your income streams before the coming recession.",
+          "Master one emerging technology others aren't pursuing yet.",
+        ],
+        // 2 ominous, random predictions (0.1% chance, unexpected, max 10 words)
+        random: [
+          "Undetected data breach silently compromises your personal financial information.",
+          "Unknown illness from routine medical visit changes everything.",
+        ],
+      });
+      setIsLoading(false);
+    }, 1500);
+  };
+
+  return (
+    <div className="p-6">
+      <form onSubmit={handleSubmit} className="mb-6">
+        <div className="relative">
+          <input
+            type="text"
+            value={input}
+            onChange={(e) => setInput(e.target.value.slice(0, 100))}
+            placeholder="Enter your context..."
+            maxLength={100}
+            className="w-full bg-[#f5f5f7] dark:bg-[#2d2d2f] rounded-lg border-none px-4 py-3 text-[#1d1d1f] dark:text-white placeholder-[#86868b] focus:outline-none focus:ring-2 focus:ring-[#0066cc]"
           />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
+          <div className="absolute right-3 bottom-3 text-xs text-[#86868b]">
+            {input.length}/100
+          </div>
+        </div>
+
+        <button
+          type="submit"
+          disabled={!input.trim() || isLoading}
+          className="mt-4 w-full bg-[#0066cc] hover:bg-[#0055b3] text-white font-medium py-3 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
+          {isLoading ? "Consulting the stars..." : "Reveal My Fortune"}
+        </button>
+      </form>
+
+      {fortunes && (
+        <div className="space-y-6 animate-fade-in">
+          <FortuneSection
+            title="What might happen"
+            items={fortunes.probabilities}
+            icon="⭐"
+            description="Based on historical probabilities"
           />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
+
+          <FortuneSection
+            title="What you should do"
+            items={fortunes.actions}
+            icon="🧭"
+            description="Profitable and progressive actions"
           />
-          Go to nextjs.org →
-        </a>
-      </footer>
+
+          <FortuneSection
+            title="Unlikely dark possibilities"
+            items={fortunes.random}
+            icon="🔮"
+            description="Rare but possible scenarios (0.1% chance)"
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FortuneSection({
+  title,
+  items,
+  icon,
+  description,
+}: {
+  title: string;
+  items: string[];
+  icon: string;
+  description: string;
+}) {
+  return (
+    <div>
+      <h2 className="text-sm font-medium text-[#86868b] dark:text-[#a1a1a6] mb-1 flex items-center">
+        {icon} <span className="ml-2">{title}</span>
+      </h2>
+      <p className="text-xs text-[#86868b] dark:text-[#a1a1a6] mb-2">
+        {description}
+      </p>
+      <ul className="space-y-2">
+        {items.map((item, i) => (
+          <li
+            key={i}
+            className={`p-3 rounded-lg text-sm ${
+              title === "Unlikely dark possibilities"
+                ? "bg-[#1c1c1e] text-[#ff453a] dark:bg-[#1a1a1a] dark:text-[#ff6961]"
+                : "bg-[#f5f5f7] dark:bg-[#2d2d2f] text-[#1d1d1f] dark:text-white"
+            }`}
+          >
+            {item}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
