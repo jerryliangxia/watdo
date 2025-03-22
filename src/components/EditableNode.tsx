@@ -5,6 +5,7 @@ interface EditableNodeData {
   label: string;
   onChange: (newLabel: string) => void;
   onBranch: () => void;
+  hasBranches?: boolean;
 }
 
 interface EditableNodeProps {
@@ -24,6 +25,9 @@ const EditableNode = ({ data }: EditableNodeProps) => {
     if (e.key === "Enter") {
       setIsEditing(false);
       data.onChange(editText);
+      if (data.hasBranches) {
+        data.onBranch();
+      }
     } else if (e.key === "Escape") {
       setIsEditing(false);
       setEditText(tempText);

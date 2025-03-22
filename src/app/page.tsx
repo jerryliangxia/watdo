@@ -29,6 +29,7 @@ const initialNodes: Node[] = [
       label: "Click Branch to expand",
       onChange: (newLabel: string) => console.log("Node 1:", newLabel),
       onBranch: () => console.log("Branch clicked for node 1"),
+      hasBranches: false,
     },
     position: { x: 250, y: 25 },
   },
@@ -99,6 +100,7 @@ export default function Home() {
               onChange: (newLabel: string) =>
                 console.log(`${nodeId}-1:`, newLabel),
               onBranch: () => handleBranch(`${nodeId}-1`),
+              hasBranches: false,
             },
             position: { x: node.position.x - 150, y: baseY },
           },
@@ -110,6 +112,7 @@ export default function Home() {
               onChange: (newLabel: string) =>
                 console.log(`${nodeId}-2:`, newLabel),
               onBranch: () => handleBranch(`${nodeId}-2`),
+              hasBranches: false,
             },
             position: { x: node.position.x, y: baseY },
           },
@@ -121,6 +124,7 @@ export default function Home() {
               onChange: (newLabel: string) =>
                 console.log(`${nodeId}-3:`, newLabel),
               onBranch: () => handleBranch(`${nodeId}-3`),
+              hasBranches: false,
             },
             position: { x: node.position.x + 150, y: baseY },
           },
@@ -165,6 +169,7 @@ export default function Home() {
             ...node.data,
             onChange: (newLabel: string) => updateNodeData(node.id, newLabel),
             onBranch: () => handleBranch(node.id),
+            hasBranches: branchedNodes.has(node.id),
           },
         }))}
         edges={edges}
