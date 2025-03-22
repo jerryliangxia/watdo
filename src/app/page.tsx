@@ -26,8 +26,9 @@ const initialNodes: Node[] = [
     id: "1",
     type: "editable",
     data: {
-      label: "Click me to branch",
+      label: "Click Branch to expand",
       onChange: (newLabel: string) => console.log("Node 1:", newLabel),
+      onBranch: () => console.log("Branch clicked for node 1"),
     },
     position: { x: 250, y: 25 },
   },
@@ -68,81 +69,109 @@ export default function Home() {
     [branchedNodes]
   );
 
-  const handleNodeClick = useCallback(
-    (event: React.MouseEvent, node: Node) => {
-      if (branchedNodes.has(node.id)) {
+  const handleBranch = useCallback(
+    (nodeId: string) => {
+      if (branchedNodes.has(nodeId)) {
         // Remove all child nodes and their edges recursively
-        const childNodeIds = getChildNodeIds(node.id);
+        const childNodeIds = getChildNodeIds(nodeId);
         setNodes((nds) => nds.filter((n) => !childNodeIds.includes(n.id)));
         setEdges((eds) => eds.filter((e) => !childNodeIds.includes(e.target)));
 
         // Remove all branched status for the node and its children
         setBranchedNodes((prev) => {
           const newSet = new Set(prev);
-          newSet.delete(node.id);
+          newSet.delete(nodeId);
           childNodeIds.forEach((id) => newSet.delete(id));
           return newSet;
         });
       } else {
         // Create new branches
+        const node = nodes.find((n) => n.id === nodeId);
+        if (!node) return;
+
         const baseY = node.position.y + 150;
         const newNodes: Node[] = [
           {
-            id: `${node.id}-1`,
+            id: `${nodeId}-1`,
             type: "editable",
             data: {
               label: "Branch 1",
               onChange: (newLabel: string) =>
-                console.log(`${node.id}-1:`, newLabel),
+                console.log(`${nodeId}-1:`, newLabel),
+              onBranch: () => handleBranch(`${nodeId}-1`),
             },
             position: { x: node.position.x - 150, y: baseY },
           },
           {
-            id: `${node.id}-2`,
+            id: `${nodeId}-2`,
             type: "editable",
             data: {
               label: "Branch 2",
               onChange: (newLabel: string) =>
-                console.log(`${node.id}-2:`, newLabel),
+                console.log(`${nodeId}-2:`, newLabel),
+              onBranch: () => handleBranch(`${nodeId}-2`),
             },
             position: { x: node.position.x, y: baseY },
           },
           {
-            id: `${node.id}-3`,
+            id: `${nodeId}-3`,
             type: "editable",
             data: {
               label: "Branch 3",
               onChange: (newLabel: string) =>
-                console.log(`${node.id}-3:`, newLabel),
+                console.log(`${nodeId}-3:`, newLabel),
+              onBranch: () => handleBranch(`${nodeId}-3`),
             },
             position: { x: node.position.x + 150, y: baseY },
           },
         ];
 
         const newEdges: Edge[] = [
-          { id: `e${node.id}-1`, source: node.id, target: `${node.id}-1` },
-          { id: `e${node.id}-2`, source: node.id, target: `${node.id}-2` },
-          { id: `e${node.id}-3`, source: node.id, target: `${node.id}-3` },
+          { id: `e${nodeId}-1`, source: nodeId, target: `${nodeId}-1` },
+          { id: `e${nodeId}-2`, source: nodeId, target: `${nodeId}-2` },
+          { id: `e${nodeId}-3`, source: nodeId, target: `${nodeId}-3` },
         ];
 
         setNodes((nds) => [...nds, ...newNodes]);
         setEdges((eds) => [...eds, ...newEdges]);
-        setBranchedNodes((prev) => new Set([...prev, node.id]));
+        setBranchedNodes((prev) => new Set([...prev, nodeId]));
       }
     },
-    [branchedNodes, getChildNodeIds]
+    [branchedNodes, getChildNodeIds, nodes]
   );
+
+  const updateNodeData = useCallback((nodeId: string, newLabel: string) => {
+    setNodes((nds) =>
+      nds.map((node) =>
+        node.id === nodeId
+          ? {
+              ...node,
+              data: {
+                ...node.data,
+                label: newLabel,
+              },
+            }
+          : node
+      )
+    );
+  }, []);
 
   return (
     <div style={{ width: "100vw", height: "100vh" }}>
       <ReactFlow
-        nodes={nodes}
+        nodes={nodes.map((node) => ({
+          ...node,
+          data: {
+            ...node.data,
+            onChange: (newLabel: string) => updateNodeData(node.id, newLabel),
+            onBranch: () => handleBranch(node.id),
+          },
+        }))}
         edges={edges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
         nodeTypes={nodeTypes}
-        onNodeClick={handleNodeClick}
         fitView
       >
         <Background />
