@@ -45,15 +45,15 @@ const EditableNode = ({ data }: EditableNodeProps) => {
 
   return (
     <div
-      className="px-4 py-3 shadow-[0_8px_30px_rgb(0,0,0,0.12)] rounded-xl bg-white/80 backdrop-blur-md border border-white/50 hover:shadow-[0_8px_30px_rgb(0,0,0,0.2)] transition-all duration-200 cursor-pointer group"
+      className="w-[300px] px-6 py-4 shadow-[0_8px_30px_rgb(0,0,0,0.12)] rounded-xl bg-white/80 backdrop-blur-md border border-white/50 hover:shadow-[0_8px_30px_rgb(0,0,0,0.2)] transition-all duration-200 cursor-pointer group"
       onDoubleClick={handleDoubleClick}
     >
       <Handle
         type="target"
-        position={Position.Top}
+        position={Position.Left}
         className="!bg-white/50 !border-white/50 !w-3 !h-3"
       />
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-4">
         {isEditing ? (
           <input
             type="text"
@@ -61,11 +61,11 @@ const EditableNode = ({ data }: EditableNodeProps) => {
             onChange={handleTextChange}
             onKeyDown={handleKeyDown}
             onBlur={handleBlur}
-            className="w-full bg-transparent border-none focus:outline-none text-center font-medium text-gray-800"
+            className="w-full bg-transparent border-none focus:outline-none text-center font-medium text-gray-800 text-lg"
             autoFocus
           />
         ) : (
-          <span className="font-medium text-gray-800 text-center flex-1">
+          <span className="font-medium text-gray-800 text-center flex-1 text-lg">
             {data.label}
           </span>
         )}
@@ -74,14 +74,14 @@ const EditableNode = ({ data }: EditableNodeProps) => {
             e.stopPropagation();
             data.onBranch();
           }}
-          className="px-2 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded-md transition-colors duration-200"
+          className="px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 rounded-md transition-colors duration-200"
         >
           Branch
         </button>
       </div>
       <Handle
         type="source"
-        position={Position.Bottom}
+        position={Position.Right}
         className="!bg-white/50 !border-white/50 !w-3 !h-3 group-hover:!bg-gray-200/50 group-hover:!border-gray-200/50 transition-colors duration-200"
       />
     </div>
