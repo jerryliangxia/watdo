@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useState, useEffect } from "react";
 import {
   ReactFlow,
   Node,
@@ -16,9 +16,11 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import EditableNode from "@/components/EditableNode";
+import TimelineNode from "@/components/TimelineNode";
 
 const nodeTypes = {
   editable: EditableNode as any,
+  timeline: TimelineNode as any,
 };
 
 const initialNodes: Node[] = [
@@ -38,6 +40,24 @@ export default function Home() {
   const [nodes, setNodes] = useState<Node[]>(initialNodes);
   const [edges, setEdges] = useState<Edge[]>([]);
   const [branchedNodes, setBranchedNodes] = useState<Set<string>>(new Set());
+
+  // Add timeline node
+  useEffect(() => {
+    const timelineNode: Node = {
+      id: "timeline",
+      type: "timeline",
+      position: { x: 0, y: window.innerHeight - 64 }, // 64px from bottom
+      data: {},
+      style: {
+        width: window.innerWidth,
+        height: 64,
+        background: "transparent",
+        border: "none",
+        pointerEvents: "none",
+      },
+    };
+    setNodes((nds) => [...nds, timelineNode]);
+  }, []);
 
   const onNodesChange = useCallback((changes: NodeChange[]) => {
     setNodes((nds) => applyNodeChanges(changes, nds));
