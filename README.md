@@ -36,6 +36,9 @@ You can interact with the fortune teller by entering your context or question.
 
 - Generate personalized fortune predictions using AI
 - Three types of predictions: probability-based, action recommendations, and unlikely scenarios
+- Shuffle individual predictions or entire categories at once
+- Smart batching of shuffle requests for improved performance
+- Ensures all predictions are unique within their category
 - Modern, clean UI inspired by Apple design principles
 
 ## Technology Stack
