@@ -34,37 +34,38 @@ function FortuneTeller() {
     random: string[];
   }>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!input.trim()) return;
 
     setIsLoading(true);
+    setError(null);
 
-    // Simulate fortune generation
-    setTimeout(() => {
-      // Example responses - in a real app, these would come from an API based on the input
-      setFortunes({
-        // 3 probability-based predictions (accurate, historical, max 10 words)
-        probabilities: [
-          "Remote work positions will decrease by 18% next quarter.",
-          "Market volatility will impact your sector within 45 days.",
-          "Three competitors will merge before year's end.",
-        ],
-        // 2 action recommendations (profitable/progressive, max 10 words)
-        actions: [
-          "Diversify your income streams before the coming recession.",
-          "Master one emerging technology others aren't pursuing yet.",
-        ],
-        // 2 ominous, random predictions (0.1% chance, unexpected, max 10 words)
-        random: [
-          "Undetected data breach silently compromises your personal financial information.",
-          "Unknown illness from routine medical visit changes everything.",
-        ],
+    try {
+      const response = await fetch("/api/fortune", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ userInput: input }),
       });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to get fortune");
+      }
+
+      const data = await response.json();
+      setFortunes(data.fortunes);
+    } catch (err) {
+      console.error("Error fetching fortune:", err);
+      setError(err instanceof Error ? err.message : "Something went wrong");
+    } finally {
       setIsLoading(false);
-    }, 1500);
+    }
   };
 
   return (
@@ -92,6 +93,12 @@ function FortuneTeller() {
           {isLoading ? "Consulting the stars..." : "Reveal My Fortune"}
         </button>
       </form>
+
+      {error && (
+        <div className="py-3 px-4 mb-6 bg-[#ff453a] dark:bg-[#ff453a]/20 text-white dark:text-[#ff453a] rounded-lg text-sm">
+          {error}
+        </div>
+      )}
 
       {fortunes && (
         <div className="space-y-6 animate-fade-in">
