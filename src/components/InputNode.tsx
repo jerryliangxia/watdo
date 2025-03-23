@@ -214,6 +214,27 @@ const InputNode = memo(
                 data.value = e.target.value;
               }
             }}
+            onKeyDown={(e) => {
+              // Only proceed if there's content in the textarea
+              if (!context.trim()) return;
+
+              // Handle keyboard shortcuts
+              if (e.key === "Enter") {
+                e.preventDefault(); // Prevent default behavior (new line)
+
+                if (e.shiftKey) {
+                  // Shift+Enter -> Backward generation
+                  if (!isBackwardLoading && data.onGenerateBackward) {
+                    handleGenerateBackward();
+                  }
+                } else if (!e.ctrlKey && !e.metaKey && !e.altKey) {
+                  // Just Enter (no other modifier keys) -> Forward generation
+                  if (!isLoading && data.onGenerate) {
+                    handleGenerate();
+                  }
+                }
+              }
+            }}
             className="w-full p-2 border border-gray-200 rounded-lg text-sm min-h-[80px] resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             style={{ backgroundColor: "white", color: "black" }}
             placeholder="Enter the current context..."
@@ -225,36 +246,51 @@ const InputNode = memo(
           )}
           <div className="flex gap-1 mt-1">
             {/* Backward planning button - now on the left */}
-            <button
-              onClick={handleGenerateBackward}
-              disabled={isBackwardLoading || !context.trim()}
-              className={`flex-1 py-1.5 px-1 rounded-lg text-white text-xs font-medium transition-colors duration-200 flex items-center justify-center
-              ${
-                isBackwardLoading || !context.trim()
-                  ? "bg-gray-300 cursor-not-allowed"
-                  : "bg-orange-500 hover:bg-orange-600"
-              }`}
-            >
-              <span className="whitespace-nowrap">
-                {isBackwardLoading ? "..." : "← Backward"}
-              </span>
-            </button>
+            <div className="relative flex-1 group">
+              <button
+                onClick={handleGenerateBackward}
+                disabled={isBackwardLoading || !context.trim()}
+                className={`w-full py-1.5 px-1 rounded-lg text-white text-xs font-medium transition-colors duration-200 flex items-center justify-center
+                ${
+                  isBackwardLoading || !context.trim()
+                    ? "bg-gray-300 cursor-not-allowed"
+                    : "bg-orange-500 hover:bg-orange-600"
+                }`}
+              >
+                <span className="whitespace-nowrap">
+                  {isBackwardLoading ? "..." : "← Backward"}
+                </span>
+              </button>
+              <div className="absolute bottom-full left-0 mb-1 hidden group-hover:block">
+                <div className="bg-gray-900 text-white text-xs rounded py-1 px-2 whitespace-nowrap">
+                  Press{" "}
+                  <kbd className="bg-gray-700 px-1 rounded">Shift+Enter</kbd>
+                </div>
+              </div>
+            </div>
 
             {/* Forward planning button - now on the right */}
-            <button
-              onClick={handleGenerate}
-              disabled={isLoading || !context.trim()}
-              className={`flex-1 py-1.5 px-1 rounded-lg text-white text-xs font-medium transition-colors duration-200 flex items-center justify-center
-              ${
-                isLoading || !context.trim()
-                  ? "bg-gray-300 cursor-not-allowed"
-                  : "bg-blue-500 hover:bg-blue-600"
-              }`}
-            >
-              <span className="whitespace-nowrap">
-                {isLoading ? "..." : "Forward →"}
-              </span>
-            </button>
+            <div className="relative flex-1 group">
+              <button
+                onClick={handleGenerate}
+                disabled={isLoading || !context.trim()}
+                className={`w-full py-1.5 px-1 rounded-lg text-white text-xs font-medium transition-colors duration-200 flex items-center justify-center
+                ${
+                  isLoading || !context.trim()
+                    ? "bg-gray-300 cursor-not-allowed"
+                    : "bg-blue-500 hover:bg-blue-600"
+                }`}
+              >
+                <span className="whitespace-nowrap">
+                  {isLoading ? "..." : "Forward →"}
+                </span>
+              </button>
+              <div className="absolute bottom-full right-0 mb-1 hidden group-hover:block">
+                <div className="bg-gray-900 text-white text-xs rounded py-1 px-2 whitespace-nowrap">
+                  Press <kbd className="bg-gray-700 px-1 rounded">Enter</kbd>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 

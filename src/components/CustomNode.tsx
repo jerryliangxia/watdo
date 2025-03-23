@@ -1,4 +1,4 @@
-import { memo, useState } from "react";
+import { memo, useState, useCallback } from "react";
 import {
   Handle,
   Position,
@@ -26,17 +26,152 @@ export interface CustomNodeData extends Record<string, unknown> {
 
 const OPERATORS = ["+", "-", "*", "%"];
 
+// Helper function to generate a unique ID
+let nodeCounter = 1;
+const generateId = () => `custom-${nodeCounter++}`;
+
 const CustomNode = memo(
   ({ id, data, isConnectable, selected }: NodeProps<Node<CustomNodeData>>) => {
     const isOperator = data.type === "operator";
     // Number of current connections plus one empty slot for new connections
     const numHandles = (data.inputs?.length || 0) + 1;
-    const { setNodes } = useReactFlow();
+    const { setNodes, setEdges, getNodes, getEdges } = useReactFlow();
     const [isHoveringAge, setIsHoveringAge] = useState(false);
     const [isDraggingAge, setIsDraggingAge] = useState(false);
 
     // Get the age value from timelineValue (defaults to 22 if not set)
     const age = data.timelineValue || 22;
+
+    // Function to create an operator node when Cmd+Click on a value node
+    const handleNodeClick = useCallback(
+      (e: React.MouseEvent) => {
+        // Only handle for value nodes, not operators
+        if (isOperator || data.type !== "value") return;
+
+        // Check if Cmd key (Mac) or Ctrl key (Windows) is pressed
+        if (e.metaKey || e.ctrlKey) {
+          e.stopPropagation(); // Prevent other click handlers
+
+          // Create a random operator
+          const operator =
+            OPERATORS[Math.floor(Math.random() * OPERATORS.length)];
+          const currentNodes = getNodes();
+          const currentEdges = getEdges();
+
+          // Get the position of the current node
+          const sourceNode = currentNodes.find((node) => node.id === id);
+          if (!sourceNode) return;
+
+          // Position the new operator node ahead (right/forward) of the clicked node
+          const newNodeId = generateId();
+          const offsetX = 350; // Increased distance to the right (from 200 to 350)
+          const offsetY = 0; // Same vertical position
+
+          // Create the new operator node with proper structure
+          const newNode = {
+            id: newNodeId,
+            type: "custom",
+            position: {
+              x: sourceNode.position.x + offsetX,
+              y: sourceNode.position.y + offsetY,
+            },
+            data: {
+              type: "operator",
+              value: operator,
+              timelineValue: sourceNode.data.timelineValue,
+              inputs: [], // Initialize empty inputs array
+              sourceIds: [], // Initialize empty sourceIds array
+              history: [], // Initialize empty history array
+            },
+          };
+
+          // Create an edge from the current value node to the new operator node
+          const newEdge = {
+            id: `edge-${id}-${newNodeId}`,
+            source: id,
+            target: newNodeId,
+            type: "default",
+          };
+
+          // First add the node
+          setNodes((nodes) => {
+            const updatedNodes = [...nodes, newNode];
+
+            // Add edge after node is added
+            setTimeout(() => {
+              setEdges((edges) => {
+                const newEdges = [...edges, newEdge];
+
+                // Calculate results with the updated nodes and edges
+                setNodes((latestNodes) => {
+                  // Find the newly added node
+                  const operatorNode = latestNodes.find(
+                    (n) => n.id === newNodeId
+                  );
+                  if (!operatorNode) return latestNodes;
+
+                  // Use the same logic as calculateNodeResults for operator nodes
+                  const nodeMap = new Map(
+                    latestNodes.map((node) => [node.id, node])
+                  );
+
+                  // Find incoming edges for the operator node
+                  const incomingEdges = newEdges.filter(
+                    (edge) => edge.target === newNodeId
+                  );
+                  const sourceNodes = incomingEdges
+                    .map((edge) => nodeMap.get(edge.source))
+                    .filter((node): node is Node<any> => node !== undefined);
+
+                  // Get values and collect source IDs
+                  const contexts: string[] = [];
+                  const sourceIds: string[] = [];
+
+                  sourceNodes.forEach((srcNode) => {
+                    sourceIds.push(srcNode.id);
+                    contexts.push(
+                      typeof srcNode.data.value === "string"
+                        ? srcNode.data.value
+                        : String(srcNode.data.value)
+                    );
+                  });
+
+                  // Update the operator node with inputs and source IDs
+                  return latestNodes.map((n) => {
+                    if (n.id === newNodeId) {
+                      return {
+                        ...n,
+                        data: {
+                          ...n.data,
+                          inputs: contexts,
+                          sourceIds,
+                          history: sourceIds,
+                        },
+                      };
+                    }
+                    return n;
+                  });
+                });
+
+                return newEdges;
+              });
+            }, 10);
+
+            return updatedNodes;
+          });
+        }
+      },
+      [
+        id,
+        isOperator,
+        data.type,
+        setNodes,
+        setEdges,
+        getNodes,
+        getEdges,
+        data.timelineValue,
+      ]
+    );
 
     // Get color based on age ranges with smoother transitions
     const getUrgencyColor = () => {
@@ -228,7 +363,7 @@ const CustomNode = memo(
       <div
         className={`relative px-4 py-2 min-w-[80px] min-h-[80px] text-center ${
           data.isLoading ? "animate-pulse" : ""
-        }`}
+        } ${!isOperator && data.type === "value" ? "group" : ""}`}
         style={{
           backgroundColor: isOperator
             ? data.value === "+"
@@ -253,6 +388,7 @@ const CustomNode = memo(
               : getUrgencyColor()
           }`, // Use urgency color for value nodes
         }}
+        onClick={handleNodeClick}
       >
         <NodeResizer
           isVisible={selected}
@@ -261,6 +397,18 @@ const CustomNode = memo(
           handleClassName={colors.handle}
           lineClassName={`border-${colors.border}`}
         />
+
+        {/* Command+Click Tooltip (only for value nodes) */}
+        {!isOperator && data.type === "value" && (
+          <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-1 hidden group-hover:block z-50">
+            <div className="bg-gray-900 text-white text-xs rounded py-1 px-2 whitespace-nowrap">
+              <kbd className="bg-gray-700 px-1 rounded">
+                {navigator.platform.includes("Mac") ? "⌘" : "Ctrl"}+Click
+              </kbd>{" "}
+              to add operator
+            </div>
+          </div>
+        )}
 
         {/* Age Badge */}
         <div
