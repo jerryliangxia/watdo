@@ -1,4 +1,4 @@
-import { memo, useState, useCallback } from "react";
+import { memo, useState, useCallback, useRef, useEffect } from "react";
 import {
   Handle,
   Position,
@@ -22,9 +22,18 @@ export interface CustomNodeData extends Record<string, unknown> {
   generatingOptions?: boolean;
   onGenerate?: (context: string) => Promise<void>;
   onUpdateAge?: (newAge: number) => void;
+  onReshuffleContext?: () => Promise<void>; // Function to reshuffle the node's context
+  showOperatorDropdown?: boolean;
 }
 
+// Define operator values and their display names
 const OPERATORS = ["+", "-", "*", "%"];
+const OPERATOR_LABELS: Record<string, string> = {
+  "+": "Benefit",
+  "-": "Detriment",
+  "*": "Unlucky",
+  "%": "Lucky",
+};
 
 // Helper function to generate a unique ID
 let nodeCounter = 1;
@@ -38,6 +47,37 @@ const CustomNode = memo(
     const { setNodes, setEdges, getNodes, getEdges } = useReactFlow();
     const [isHoveringAge, setIsHoveringAge] = useState(false);
     const [isDraggingAge, setIsDraggingAge] = useState(false);
+    const dropdownRef = useRef<HTMLDivElement>(null);
+
+    // Handle click outside of dropdown
+    useEffect(() => {
+      function handleClickOutside(event: MouseEvent) {
+        if (
+          dropdownRef.current &&
+          !dropdownRef.current.contains(event.target as HTMLElement)
+        ) {
+          setNodes((nodes) =>
+            nodes.map((node) => {
+              if (node.id === id && node.data.showOperatorDropdown) {
+                return {
+                  ...node,
+                  data: {
+                    ...node.data,
+                    showOperatorDropdown: false,
+                  },
+                };
+              }
+              return node;
+            })
+          );
+        }
+      }
+
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => {
+        document.removeEventListener("mousedown", handleClickOutside);
+      };
+    }, [id, setNodes]);
 
     // Get the age value from timelineValue (defaults to 22 if not set)
     const age = data.timelineValue || 22;
@@ -64,7 +104,7 @@ const CustomNode = memo(
 
           // Position the new operator node ahead (right/forward) of the clicked node
           const newNodeId = generateId();
-          const offsetX = 350; // Increased distance to the right (from 200 to 350)
+          const offsetX = 500; // Increased distance to the right (from 350 to 500)
           const offsetY = 0; // Same vertical position
 
           // Create the new operator node with proper structure
@@ -296,7 +336,7 @@ const CustomNode = memo(
         };
       }
       // Different colors for different operators
-      return data.value === "+"
+      return data.value === "+" // Benefit
         ? {
             bg: "bg-emerald-50",
             border: "border-emerald-200",
@@ -304,7 +344,7 @@ const CustomNode = memo(
             handle: "!bg-emerald-500",
             button: "bg-emerald-100 hover:bg-emerald-200 text-emerald-700",
           }
-        : data.value === "-"
+        : data.value === "-" // Detriment
         ? {
             bg: "bg-rose-50",
             border: "border-rose-200",
@@ -312,7 +352,7 @@ const CustomNode = memo(
             handle: "!bg-rose-500",
             button: "bg-rose-100 hover:bg-rose-200 text-rose-700",
           }
-        : data.value === "*"
+        : data.value === "*" // Unlucky
         ? {
             bg: "bg-purple-50",
             border: "border-purple-200",
@@ -321,6 +361,7 @@ const CustomNode = memo(
             button: "bg-purple-100 hover:bg-purple-200 text-purple-700",
           }
         : {
+            // Lucky
             bg: "bg-amber-50",
             border: "border-amber-200",
             text: "text-amber-700",
@@ -366,25 +407,25 @@ const CustomNode = memo(
         } ${!isOperator && data.type === "value" ? "group" : ""}`}
         style={{
           backgroundColor: isOperator
-            ? data.value === "+"
+            ? data.value === "+" // Benefit
               ? "#F0FFF4" // emerald-50
-              : data.value === "-"
+              : data.value === "-" // Detriment
               ? "#FFF5F5" // rose-50
-              : data.value === "*"
+              : data.value === "*" // Unlucky
               ? "#FAF5FF" // purple-50
-              : "#FFFBEB" // amber-50
+              : "#FFFBEB" // amber-50 (Lucky)
             : "#EBF8FF", // blue-50
           boxShadow: "0 4px 8px rgba(0, 0, 0, 0.2)",
           borderRadius: "8px",
           border: `2px solid ${
             isOperator
-              ? data.value === "+"
+              ? data.value === "+" // Benefit
                 ? "#C6F6D5" // emerald-200
-                : data.value === "-"
+                : data.value === "-" // Detriment
                 ? "#FED7D7" // rose-200
-                : data.value === "*"
+                : data.value === "*" // Unlucky
                 ? "#E9D8FD" // purple-200
-                : "#FEF3C7" // amber-200
+                : "#FEF3C7" // amber-200 (Lucky)
               : getUrgencyColor()
           }`, // Use urgency color for value nodes
         }}
@@ -475,22 +516,146 @@ const CustomNode = memo(
         <div className={`font-medium ${colors.text}`}>
           {isOperator ? (
             <div className="flex flex-col items-center gap-1">
-              <select
-                value={data.value as string}
-                onChange={handleOperatorChange}
-                className={`text-lg bg-transparent border-none cursor-pointer focus:outline-none ${colors.text}`}
-              >
-                {OPERATORS.map((op) => (
-                  <option key={op} value={op}>
-                    {op}
-                  </option>
-                ))}
-              </select>
-              {data.inputs && data.inputs.length > 0 && (
-                <div className="text-sm opacity-75">
-                  #{data.sourceIds?.join(` ${data.value} #`)}
-                </div>
-              )}
+              {/* Custom Dropdown */}
+              <div className="relative">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setNodes((nodes) =>
+                      nodes.map((node) => {
+                        if (node.id === id) {
+                          return {
+                            ...node,
+                            data: {
+                              ...node.data,
+                              showOperatorDropdown:
+                                !node.data.showOperatorDropdown,
+                            },
+                          };
+                        }
+                        return node;
+                      })
+                    );
+                  }}
+                  className="flex items-center justify-between w-full text-sm font-semibold px-3 py-1.5 rounded-md appearance-none cursor-pointer focus:outline-none"
+                  style={{
+                    backgroundColor:
+                      data.value === "+" // Benefit
+                        ? "#F0FFF4" // emerald-50
+                        : data.value === "-" // Detriment
+                        ? "#FFF5F5" // rose-50
+                        : data.value === "*" // Unlucky
+                        ? "#FAF5FF" // purple-50
+                        : "#FFFBEB", // amber-50 (Lucky)
+                    borderRadius: "6px",
+                    border: `1px solid ${
+                      data.value === "+" // Benefit
+                        ? "#C6F6D5" // emerald-200
+                        : data.value === "-" // Detriment
+                        ? "#FED7D7" // rose-200
+                        : data.value === "*" // Unlucky
+                        ? "#E9D8FD" // purple-200
+                        : "#FEF3C7" // amber-200 (Lucky)
+                    }`,
+                    color:
+                      data.value === "+" // Benefit
+                        ? "#047857" // emerald-700
+                        : data.value === "-" // Detriment
+                        ? "#BE123C" // rose-700
+                        : data.value === "*" // Unlucky
+                        ? "#7E22CE" // purple-700
+                        : "#B45309", // amber-700 (Lucky)
+                  }}
+                >
+                  <span>{OPERATOR_LABELS[data.value as string]}</span>
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="white"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <polyline points="6 9 12 15 18 9"></polyline>
+                  </svg>
+                </button>
+
+                {data.showOperatorDropdown && (
+                  <div
+                    ref={dropdownRef}
+                    className="absolute top-full left-0 w-full mt-1 rounded-md shadow-lg overflow-hidden z-50"
+                    style={{
+                      zIndex: 9999,
+                    }}
+                  >
+                    {OPERATORS.map((op) => {
+                      // Get background color based on operator type
+                      let bgColor =
+                        op === "+" // Benefit
+                          ? "#F0FFF4" // emerald-50
+                          : op === "-" // Detriment
+                          ? "#FFF5F5" // rose-50
+                          : op === "*" // Unlucky
+                          ? "#FAF5FF" // purple-50
+                          : "#FFFBEB"; // amber-50 (Lucky)
+
+                      // Get text/border color based on operator type
+                      let textColor =
+                        op === "+" // Benefit
+                          ? "#C6F6D5" // emerald-200 (border color)
+                          : op === "-" // Detriment
+                          ? "#FED7D7" // rose-200 (border color)
+                          : op === "*" // Unlucky
+                          ? "#E9D8FD" // purple-200 (border color)
+                          : "#FEF3C7"; // amber-200 (border color)
+
+                      return (
+                        <div
+                          key={op}
+                          className="px-3 py-1.5 cursor-pointer text-center"
+                          style={{
+                            backgroundColor: bgColor,
+                            color:
+                              op === "+" // Benefit
+                                ? "#047857" // emerald-700
+                                : op === "-" // Detriment
+                                ? "#BE123C" // rose-700
+                                : op === "*" // Unlucky
+                                ? "#7E22CE" // purple-700
+                                : "#B45309", // amber-700 (Lucky)
+                            borderBottom:
+                              op !== "%" ? `1px solid ${textColor}` : "none",
+                          }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setNodes((nodes) =>
+                              nodes.map((node) => {
+                                if (node.id === id) {
+                                  return {
+                                    ...node,
+                                    data: {
+                                      ...node.data,
+                                      value: op,
+                                      showOperatorDropdown: false,
+                                    },
+                                  };
+                                }
+                                return node;
+                              })
+                            );
+                          }}
+                        >
+                          {OPERATOR_LABELS[op]}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
               {data.isLoading ? (
                 <div className="flex flex-col items-center gap-2">
                   <LoadingSpinner />
@@ -527,11 +692,6 @@ const CustomNode = memo(
                       </button>
                     </>
                   )}
-                  {data.history && data.history.length > 0 && (
-                    <div className="text-xs opacity-50 mt-1 border-t border-current pt-1">
-                      Used: [#{data.history.join(", #")}]
-                    </div>
-                  )}
                 </>
               )}
             </div>
@@ -540,6 +700,37 @@ const CustomNode = memo(
               <div className="text-sm max-w-[300px] whitespace-pre-wrap">
                 {data.value}
               </div>
+
+              {/* Reshuffle Button - only for value nodes */}
+              {data.type === "value" && data.onReshuffleContext && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    data.onReshuffleContext?.();
+                  }}
+                  className="absolute bottom-1 right-1 p-1 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors duration-200"
+                  title="Reshuffle this context"
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M3 2v6h6"></path>
+                    <path d="M3 8L8 3"></path>
+                    <path d="M21 12A9 9 0 0 0 3 16.2L7 22"></path>
+                    <path d="M21 22v-6h-6"></path>
+                    <path d="M21 16l-5 5"></path>
+                    <path d="M3 12a9 9 0 0 0 18-4.2l-4-7.8"></path>
+                  </svg>
+                </button>
+              )}
             </div>
           )}
         </div>

@@ -35,6 +35,7 @@ type NodeData = {
   generatingOptions?: boolean;
   onGenerateBackward?: (context: string) => Promise<void>;
   onUpdateAge?: (newAge: number) => void;
+  onReshuffleContext?: () => Promise<void>;
   [key: string]: unknown;
 };
 
@@ -277,6 +278,19 @@ function Flow() {
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
   const { screenToFlowPosition, getViewport } = useReactFlow();
 
+  // Add function to calculate timeline value from x position
+  const getTimelineValue = useCallback((xPos: number) => {
+    // Base age is 20
+    const baseAge = 20;
+
+    // Map x position to timeline value (20-99 range)
+    // Every 150px increment represents roughly one decade
+    const offset = Math.round(xPos / 150);
+
+    // Clamp value between min and max
+    return Math.max(baseAge, Math.min(99, baseAge + offset));
+  }, []);
+
   // Add new state for context menu
   const [contextMenu, setContextMenu] = useState<{
     x: number;
@@ -284,78 +298,79 @@ function Flow() {
     flowPosition: { x: number; y: number };
   } | null>(null);
 
-  // Add Cohere API call function
-  const generateOptions = async (context: string, nodeId: string) => {
-    if (!process.env.NEXT_PUBLIC_COHERE_API_KEY) {
-      console.error("Cohere API key is not configured");
-      return;
-    }
-
-    try {
-      // Get node info and set loading state in a single operation
-      const nodeInfo = await new Promise<{ sourceNode: Node<NodeData> }>(
-        (resolve, reject) => {
-          setNodes((currentNodes) => {
-            const sourceNode = currentNodes.find((n) => n.id === nodeId);
-            if (!sourceNode) {
-              reject(new Error("Source node not found"));
-              return currentNodes; // Return unchanged state
-            }
-
-            // Mark as loading and capture node info
-            resolve({ sourceNode });
-
-            // Set loading state
-            return currentNodes.map((n) =>
-              n.id === nodeId
-                ? { ...n, data: { ...n.data, generatingOptions: true } }
-                : n
-            );
-          });
-        }
-      );
-
-      const { sourceNode } = nodeInfo;
-
-      // Get the age value to determine context
-      const age = sourceNode.data.timelineValue || 22;
-      const normalizedAge = age % 100; // Normalize to 0-99 cycle
-
-      // Customize prompt based on age
-      let ageContext = "";
-
-      if (normalizedAge < 30) {
-        ageContext =
-          "You are in your 20s. You have plenty of time for long-term planning.";
-      } else if (normalizedAge < 40) {
-        ageContext =
-          "You are in your 30s. You should balance immediate needs with future planning.";
-      } else if (normalizedAge < 50) {
-        ageContext =
-          "You are in your 40s. You should focus on career advancement and financial security.";
-      } else if (normalizedAge < 60) {
-        ageContext =
-          "You are in your 50s. You should prepare for retirement and focus on health.";
-      } else if (normalizedAge < 70) {
-        ageContext =
-          "You are in your 60s. You should transition to retirement and maintain health.";
-      } else if (normalizedAge < 80) {
-        ageContext =
-          "You are in your 70s. You should focus on health and enjoying retirement.";
-      } else {
-        ageContext =
-          "You are in your 80s or older. You should focus on health, family and legacy.";
+  // Generate options, generateBackwardOptions and reshuffleContext must be memoized with useCallback
+  const generateOptions = useCallback(
+    async (context: string, nodeId: string) => {
+      if (!process.env.NEXT_PUBLIC_COHERE_API_KEY) {
+        console.error("Cohere API key is not configured");
+        return;
       }
 
-      const response = await fetch("https://api.cohere.ai/v1/generate", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${process.env.NEXT_PUBLIC_COHERE_API_KEY}`,
-        },
-        body: JSON.stringify({
-          model: "command",
-          prompt: `Based on this situation: "${context}"
+      try {
+        // Get node info and set loading state in a single operation
+        const nodeInfo = await new Promise<{ sourceNode: Node<NodeData> }>(
+          (resolve, reject) => {
+            setNodes((currentNodes) => {
+              const sourceNode = currentNodes.find((n) => n.id === nodeId);
+              if (!sourceNode) {
+                reject(new Error("Source node not found"));
+                return currentNodes; // Return unchanged state
+              }
+
+              // Mark as loading and capture node info
+              resolve({ sourceNode });
+
+              // Set loading state
+              return currentNodes.map((n) =>
+                n.id === nodeId
+                  ? { ...n, data: { ...n.data, generatingOptions: true } }
+                  : n
+              );
+            });
+          }
+        );
+
+        const { sourceNode } = nodeInfo;
+
+        // Get the age value to determine context
+        const age = sourceNode.data.timelineValue || 22;
+        const normalizedAge = age % 100; // Normalize to 0-99 cycle
+
+        // Customize prompt based on age
+        let ageContext = "";
+
+        if (normalizedAge < 30) {
+          ageContext =
+            "You are in your 20s. You have plenty of time for long-term planning.";
+        } else if (normalizedAge < 40) {
+          ageContext =
+            "You are in your 30s. You should balance immediate needs with future planning.";
+        } else if (normalizedAge < 50) {
+          ageContext =
+            "You are in your 40s. You should focus on career advancement and financial security.";
+        } else if (normalizedAge < 60) {
+          ageContext =
+            "You are in your 50s. You should prepare for retirement and focus on health.";
+        } else if (normalizedAge < 70) {
+          ageContext =
+            "You are in your 60s. You should transition to retirement and maintain health.";
+        } else if (normalizedAge < 80) {
+          ageContext =
+            "You are in your 70s. You should focus on health and enjoying retirement.";
+        } else {
+          ageContext =
+            "You are in your 80s or older. You should focus on health, family and legacy.";
+        }
+
+        const response = await fetch("https://api.cohere.ai/v1/generate", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${process.env.NEXT_PUBLIC_COHERE_API_KEY}`,
+          },
+          body: JSON.stringify({
+            model: "command",
+            prompt: `Based on this situation: "${context}"
 ${ageContext ? ageContext + "\n" : ""}
 Generate 3 brief next actions (max 15 words each) that are appropriate for someone of this age.
 Return them in this exact JSON format, with no other text:
@@ -364,235 +379,239 @@ Return them in this exact JSON format, with no other text:
   "Second brief action",
   "Third brief action"
 ]`,
-          max_tokens: 200,
-          temperature: 0.7,
-        }),
-      });
+            max_tokens: 200,
+            temperature: 0.7,
+          }),
+        });
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(
-          `Failed to generate options: ${response.status} ${
-            response.statusText
-          }${errorData.message ? ` - ${errorData.message}` : ""}`
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(
+            `Failed to generate options: ${response.status} ${
+              response.statusText
+            }${errorData.message ? ` - ${errorData.message}` : ""}`
+          );
+        }
+
+        const data = await response.json();
+
+        if (!data.generations?.[0]?.text) {
+          throw new Error("Invalid response format from Cohere API");
+        }
+
+        let options;
+        try {
+          // Clean and prepare the text for JSON parsing
+          let cleanText = data.generations[0].text
+            .trim()
+            .replace(/[\n\r]/g, "")
+            .replace(/\s+/g, " ");
+
+          // If the text starts with something other than [, try to find the first [
+          const startBracket = cleanText.indexOf("[");
+          if (startBracket !== -1) {
+            cleanText = cleanText.slice(startBracket);
+          }
+
+          // If the text ends with something other than ], try to find the last ]
+          const endBracket = cleanText.lastIndexOf("]");
+          if (endBracket !== -1) {
+            cleanText = cleanText.slice(0, endBracket + 1);
+          }
+
+          options = JSON.parse(cleanText);
+        } catch (parseError) {
+          console.error(
+            "Failed to parse options:",
+            parseError,
+            "Raw text:",
+            data.generations[0].text
+          );
+          throw new Error("Invalid JSON format in API response");
+        }
+
+        if (!Array.isArray(options) || options.length !== 3) {
+          throw new Error("Invalid options format from Cohere API");
+        }
+
+        // Create new nodes with the latest node position
+        setNodes((currentNodes) => {
+          // Get the latest version of the source node
+          const latestSourceNode = currentNodes.find((n) => n.id === nodeId);
+          if (!latestSourceNode) {
+            // This shouldn't happen since we already checked earlier
+            console.error("Source node disappeared during processing");
+            return currentNodes;
+          }
+
+          // Create new nodes for each option
+          const newNodes: Node<NodeData>[] = options.map(
+            (option: string, index: number) => {
+              const id = getId();
+              // Calculate positions in a forward-facing arc
+              const angle = (Math.PI / 6) * (index - 1); // Less spread (-30 to 30 degrees)
+              const distance = 500; // Increased safe distance from 350px to 500px
+
+              // Calculate position - ensure x is always positive (forward)
+              const xPos =
+                latestSourceNode.position.x + Math.cos(angle) * distance;
+              const yPos =
+                latestSourceNode.position.y + Math.sin(angle) * distance;
+
+              // Check for potential collisions with existing nodes
+              const nodeWidth = 250; // Approximate node width
+              const nodeHeight = 150; // Approximate node height
+
+              // Create some padding around the node
+              const nodePadding = 100; // Increased padding from 50px to 100px
+
+              // Find if this position would collide with any existing node
+              const wouldCollide = currentNodes.some((existingNode) => {
+                // Skip checking against the source node itself
+                if (existingNode.id === latestSourceNode.id) return false;
+
+                const distX = Math.abs(existingNode.position.x - xPos);
+                const distY = Math.abs(existingNode.position.y - yPos);
+
+                // If the distance is less than the combined half widths/heights + padding, they collide
+                return (
+                  distX < nodeWidth + nodePadding &&
+                  distY < nodeHeight + nodePadding
+                );
+              });
+
+              // If collision detected, adjust the distance outward
+              const finalDistance = wouldCollide ? distance * 1.5 : distance;
+              const finalXPos =
+                latestSourceNode.position.x + Math.cos(angle) * finalDistance;
+              const finalYPos =
+                latestSourceNode.position.y + Math.sin(angle) * finalDistance;
+
+              return {
+                id,
+                type: "custom",
+                data: {
+                  type: "value",
+                  value: option,
+                  timelineValue: getTimelineValue(finalXPos),
+                  onReshuffleContext: () => reshuffleContext(id),
+                },
+                position: {
+                  x: finalXPos,
+                  y: finalYPos,
+                },
+              };
+            }
+          );
+
+          // Add new nodes and update loading state
+          const updatedNodes = [...currentNodes, ...newNodes].map((n) =>
+            n.id === nodeId
+              ? { ...n, data: { ...n.data, generatingOptions: false } }
+              : n
+          );
+
+          // Create edges for the new nodes
+          setEdges((eds) => [
+            ...eds,
+            ...newNodes.map((node) => ({
+              id: `e${node.id}`,
+              source: latestSourceNode.id,
+              target: node.id,
+              type: "default",
+            })),
+          ]);
+
+          return updatedNodes;
+        });
+      } catch (error) {
+        // Clear loading state on error
+        setNodes((nds) =>
+          nds.map((n) =>
+            n.id === nodeId
+              ? { ...n, data: { ...n.data, generatingOptions: false } }
+              : n
+          )
         );
+        console.error("Error generating options:", error);
+      }
+    },
+    [setNodes, getTimelineValue]
+  );
+
+  // Add backward planning function
+  const generateBackwardOptions = useCallback(
+    async (context: string, nodeId: string) => {
+      if (!process.env.NEXT_PUBLIC_COHERE_API_KEY) {
+        console.error("Cohere API key is not configured");
+        return;
       }
 
-      const data = await response.json();
-
-      if (!data.generations?.[0]?.text) {
-        throw new Error("Invalid response format from Cohere API");
-      }
-
-      let options;
       try {
-        // Clean and prepare the text for JSON parsing
-        let cleanText = data.generations[0].text
-          .trim()
-          .replace(/[\n\r]/g, "")
-          .replace(/\s+/g, " ");
+        // Get node info and set loading state in a single operation
+        const nodeInfo = await new Promise<{ sourceNode: Node<NodeData> }>(
+          (resolve, reject) => {
+            setNodes((currentNodes) => {
+              const sourceNode = currentNodes.find((n) => n.id === nodeId);
+              if (!sourceNode) {
+                reject(new Error("Source node not found"));
+                return currentNodes; // Return unchanged state
+              }
 
-        // If the text starts with something other than [, try to find the first [
-        const startBracket = cleanText.indexOf("[");
-        if (startBracket !== -1) {
-          cleanText = cleanText.slice(startBracket);
-        }
+              // Mark as loading and capture node info
+              resolve({ sourceNode });
 
-        // If the text ends with something other than ], try to find the last ]
-        const endBracket = cleanText.lastIndexOf("]");
-        if (endBracket !== -1) {
-          cleanText = cleanText.slice(0, endBracket + 1);
-        }
-
-        options = JSON.parse(cleanText);
-      } catch (parseError) {
-        console.error(
-          "Failed to parse options:",
-          parseError,
-          "Raw text:",
-          data.generations[0].text
-        );
-        throw new Error("Invalid JSON format in API response");
-      }
-
-      if (!Array.isArray(options) || options.length !== 3) {
-        throw new Error("Invalid options format from Cohere API");
-      }
-
-      // Create new nodes with the latest node position
-      setNodes((currentNodes) => {
-        // Get the latest version of the source node
-        const latestSourceNode = currentNodes.find((n) => n.id === nodeId);
-        if (!latestSourceNode) {
-          // This shouldn't happen since we already checked earlier
-          console.error("Source node disappeared during processing");
-          return currentNodes;
-        }
-
-        // Create new nodes for each option
-        const newNodes: Node<NodeData>[] = options.map(
-          (option: string, index: number) => {
-            const id = getId();
-            // Calculate positions in a forward-facing arc
-            const angle = (Math.PI / 6) * (index - 1); // Less spread (-30 to 30 degrees)
-            const distance = 350; // Increased safe distance
-
-            // Calculate position - ensure x is always positive (forward)
-            const xPos =
-              latestSourceNode.position.x + Math.cos(angle) * distance;
-            const yPos =
-              latestSourceNode.position.y + Math.sin(angle) * distance;
-
-            // Check for potential collisions with existing nodes
-            const nodeWidth = 250; // Approximate node width
-            const nodeHeight = 150; // Approximate node height
-
-            // Create some padding around the node
-            const nodePadding = 50;
-
-            // Find if this position would collide with any existing node
-            const wouldCollide = currentNodes.some((existingNode) => {
-              // Skip checking against the source node itself
-              if (existingNode.id === latestSourceNode.id) return false;
-
-              const distX = Math.abs(existingNode.position.x - xPos);
-              const distY = Math.abs(existingNode.position.y - yPos);
-
-              // If the distance is less than the combined half widths/heights + padding, they collide
-              return (
-                distX < nodeWidth + nodePadding &&
-                distY < nodeHeight + nodePadding
+              // Set loading state
+              return currentNodes.map((n) =>
+                n.id === nodeId
+                  ? { ...n, data: { ...n.data, generatingOptions: true } }
+                  : n
               );
             });
-
-            // If collision detected, adjust the distance outward
-            const finalDistance = wouldCollide ? distance * 1.5 : distance;
-            const finalXPos =
-              latestSourceNode.position.x + Math.cos(angle) * finalDistance;
-            const finalYPos =
-              latestSourceNode.position.y + Math.sin(angle) * finalDistance;
-
-            return {
-              id,
-              type: "custom",
-              data: {
-                type: "value",
-                value: option,
-                timelineValue: getTimelineValue(finalXPos),
-              },
-              position: {
-                x: finalXPos,
-                y: finalYPos,
-              },
-            };
           }
         );
 
-        // Add new nodes and update loading state
-        const updatedNodes = [...currentNodes, ...newNodes].map((n) =>
-          n.id === nodeId
-            ? { ...n, data: { ...n.data, generatingOptions: false } }
-            : n
-        );
+        const { sourceNode } = nodeInfo;
 
-        // Create edges for the new nodes
-        setEdges((eds) => [
-          ...eds,
-          ...newNodes.map((node) => ({
-            id: `e${node.id}`,
-            source: latestSourceNode.id,
-            target: node.id,
-            type: "default",
-          })),
-        ]);
+        // Get the age value to determine context
+        const age = sourceNode.data.timelineValue || 22;
+        const normalizedAge = age % 100; // Normalize to 0-99 cycle
 
-        return updatedNodes;
-      });
-    } catch (error) {
-      // Clear loading state on error
-      setNodes((nds) =>
-        nds.map((n) =>
-          n.id === nodeId
-            ? { ...n, data: { ...n.data, generatingOptions: false } }
-            : n
-        )
-      );
-      console.error("Error generating options:", error);
-    }
-  };
+        // Customize prompt based on age
+        let ageContext = "";
 
-  // Add backward planning function
-  const generateBackwardOptions = async (context: string, nodeId: string) => {
-    if (!process.env.NEXT_PUBLIC_COHERE_API_KEY) {
-      console.error("Cohere API key is not configured");
-      return;
-    }
-
-    try {
-      // Get node info and set loading state in a single operation
-      const nodeInfo = await new Promise<{ sourceNode: Node<NodeData> }>(
-        (resolve, reject) => {
-          setNodes((currentNodes) => {
-            const sourceNode = currentNodes.find((n) => n.id === nodeId);
-            if (!sourceNode) {
-              reject(new Error("Source node not found"));
-              return currentNodes; // Return unchanged state
-            }
-
-            // Mark as loading and capture node info
-            resolve({ sourceNode });
-
-            // Set loading state
-            return currentNodes.map((n) =>
-              n.id === nodeId
-                ? { ...n, data: { ...n.data, generatingOptions: true } }
-                : n
-            );
-          });
+        if (normalizedAge < 30) {
+          ageContext =
+            "You are in your 20s. You have plenty of time for long-term planning.";
+        } else if (normalizedAge < 40) {
+          ageContext =
+            "You are in your 30s. You should balance immediate needs with future planning.";
+        } else if (normalizedAge < 50) {
+          ageContext =
+            "You are in your 40s. You should focus on career advancement and financial security.";
+        } else if (normalizedAge < 60) {
+          ageContext =
+            "You are in your 50s. You should prepare for retirement and focus on health.";
+        } else if (normalizedAge < 70) {
+          ageContext =
+            "You are in your 60s. You should transition to retirement and maintain health.";
+        } else if (normalizedAge < 80) {
+          ageContext =
+            "You are in your 70s. You should focus on health and enjoying retirement.";
+        } else {
+          ageContext =
+            "You are in your 80s or older. You should focus on health, family and legacy.";
         }
-      );
 
-      const { sourceNode } = nodeInfo;
-
-      // Get the age value to determine context
-      const age = sourceNode.data.timelineValue || 22;
-      const normalizedAge = age % 100; // Normalize to 0-99 cycle
-
-      // Customize prompt based on age
-      let ageContext = "";
-
-      if (normalizedAge < 30) {
-        ageContext =
-          "You are in your 20s. You have plenty of time for long-term planning.";
-      } else if (normalizedAge < 40) {
-        ageContext =
-          "You are in your 30s. You should balance immediate needs with future planning.";
-      } else if (normalizedAge < 50) {
-        ageContext =
-          "You are in your 40s. You should focus on career advancement and financial security.";
-      } else if (normalizedAge < 60) {
-        ageContext =
-          "You are in your 50s. You should prepare for retirement and focus on health.";
-      } else if (normalizedAge < 70) {
-        ageContext =
-          "You are in your 60s. You should transition to retirement and maintain health.";
-      } else if (normalizedAge < 80) {
-        ageContext =
-          "You are in your 70s. You should focus on health and enjoying retirement.";
-      } else {
-        ageContext =
-          "You are in your 80s or older. You should focus on health, family and legacy.";
-      }
-
-      const response = await fetch("https://api.cohere.ai/v1/generate", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${process.env.NEXT_PUBLIC_COHERE_API_KEY}`,
-        },
-        body: JSON.stringify({
-          model: "command",
-          prompt: `Given this future situation: "${context}"
+        const response = await fetch("https://api.cohere.ai/v1/generate", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${process.env.NEXT_PUBLIC_COHERE_API_KEY}`,
+          },
+          body: JSON.stringify({
+            model: "command",
+            prompt: `Given this future situation: "${context}"
 ${ageContext ? ageContext + "\n" : ""}
 Generate 3 specific prerequisite actions that would need to be taken BEFORE this situation to make it happen (max 15 words each).
 These should be appropriate for someone of this age.
@@ -602,144 +621,147 @@ Return them in this exact JSON format, with no other text:
   "Second prerequisite action needed before this situation",
   "Third prerequisite action needed before this situation"
 ]`,
-          max_tokens: 200,
-          temperature: 0.7,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(
-          `Failed to generate backward options: ${response.status} ${
-            response.statusText
-          }${errorData.message ? ` - ${errorData.message}` : ""}`
-        );
-      }
-
-      const data = await response.json();
-
-      if (!data.generations?.[0]?.text) {
-        throw new Error("Invalid response format from Cohere API");
-      }
-
-      let options;
-      try {
-        // Clean and prepare the text for JSON parsing
-        let cleanText = data.generations[0].text
-          .trim()
-          .replace(/[\n\r]/g, "")
-          .replace(/\s+/g, " ");
-
-        // If the text starts with something other than [, try to find the first [
-        const startBracket = cleanText.indexOf("[");
-        if (startBracket !== -1) {
-          cleanText = cleanText.slice(startBracket);
-        }
-
-        // If the text ends with something other than ], try to find the last ]
-        const endBracket = cleanText.lastIndexOf("]");
-        if (endBracket !== -1) {
-          cleanText = cleanText.slice(0, endBracket + 1);
-        }
-
-        options = JSON.parse(cleanText);
-      } catch (parseError) {
-        console.error(
-          "Failed to parse options:",
-          parseError,
-          "Raw text:",
-          data.generations[0].text
-        );
-        throw new Error("Invalid JSON format in API response");
-      }
-
-      if (!Array.isArray(options) || options.length !== 3) {
-        throw new Error("Invalid options format from Cohere API");
-      }
-
-      // Create new nodes using the latest nodes state
-      setNodes((currentNodes) => {
-        // Get the latest version of the source node
-        const latestSourceNode = currentNodes.find((n) => n.id === nodeId);
-        if (!latestSourceNode) {
-          console.error("Source node disappeared during processing");
-          return currentNodes;
-        }
-
-        // Create new nodes for each option - placed to the LEFT of the input node
-        const newNodes: Node<NodeData>[] = options.map(
-          (option: string, index: number) => {
-            const id = getId();
-
-            // Base distance from input node
-            const distance = 350; // Horizontal distance to the left
-
-            // For horizontal spacing, use a simple pattern:
-            // Place all nodes at the same distance to the left
-            const xPos = latestSourceNode.position.x - distance;
-
-            // Calculate vertical position with more spacing between nodes
-            // Increase spacing from 75px to 150px for better visual separation
-            const spacing = 150; // increased from 75px to 150px
-            const totalHeight = spacing * (options.length - 1);
-            const startY = latestSourceNode.position.y - totalHeight / 2;
-            const yPos = startY + index * spacing;
-
-            // Calculate age value for backward nodes (all one step before the input node)
-            const currentAge = latestSourceNode.data.timelineValue || 22;
-            const backwardAge = Math.max(20, currentAge - 5); // Reduce by 5 years for backward planning
-
-            return {
-              id,
-              type: "custom",
-              data: {
-                type: "value",
-                value: option,
-                timelineValue: backwardAge,
-              },
-              position: {
-                x: xPos,
-                y: yPos,
-              },
-            };
-          }
-        );
-
-        // Add new nodes and update loading state
-        const updatedNodes = [...currentNodes, ...newNodes].map((n) =>
-          n.id === nodeId
-            ? { ...n, data: { ...n.data, generatingOptions: false } }
-            : n
-        );
-
-        // Create edges between generated nodes and to the input node
-        setEdges((eds) => {
-          // Connect all backward nodes directly to the input node's backward-target handle
-          const newEdges = newNodes.map((node) => ({
-            id: `e${node.id}-to-input`,
-            source: node.id,
-            target: latestSourceNode.id,
-            targetHandle: "backward-target", // Specify the left target handle on the input node
-            type: "default",
-          }));
-
-          return [...eds, ...newEdges];
+            max_tokens: 200,
+            temperature: 0.7,
+          }),
         });
 
-        return updatedNodes;
-      });
-    } catch (error) {
-      // Clear loading state on error
-      setNodes((nds) =>
-        nds.map((n) =>
-          n.id === nodeId
-            ? { ...n, data: { ...n.data, generatingOptions: false } }
-            : n
-        )
-      );
-      console.error("Error generating backward options:", error);
-    }
-  };
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(
+            `Failed to generate backward options: ${response.status} ${
+              response.statusText
+            }${errorData.message ? ` - ${errorData.message}` : ""}`
+          );
+        }
+
+        const data = await response.json();
+
+        if (!data.generations?.[0]?.text) {
+          throw new Error("Invalid response format from Cohere API");
+        }
+
+        let options;
+        try {
+          // Clean and prepare the text for JSON parsing
+          let cleanText = data.generations[0].text
+            .trim()
+            .replace(/[\n\r]/g, "")
+            .replace(/\s+/g, " ");
+
+          // If the text starts with something other than [, try to find the first [
+          const startBracket = cleanText.indexOf("[");
+          if (startBracket !== -1) {
+            cleanText = cleanText.slice(startBracket);
+          }
+
+          // If the text ends with something other than ], try to find the last ]
+          const endBracket = cleanText.lastIndexOf("]");
+          if (endBracket !== -1) {
+            cleanText = cleanText.slice(0, endBracket + 1);
+          }
+
+          options = JSON.parse(cleanText);
+        } catch (parseError) {
+          console.error(
+            "Failed to parse options:",
+            parseError,
+            "Raw text:",
+            data.generations[0].text
+          );
+          throw new Error("Invalid JSON format in API response");
+        }
+
+        if (!Array.isArray(options) || options.length !== 3) {
+          throw new Error("Invalid options format from Cohere API");
+        }
+
+        // Create new nodes using the latest nodes state
+        setNodes((currentNodes) => {
+          // Get the latest version of the source node
+          const latestSourceNode = currentNodes.find((n) => n.id === nodeId);
+          if (!latestSourceNode) {
+            console.error("Source node disappeared during processing");
+            return currentNodes;
+          }
+
+          // Create new nodes for each option - placed to the LEFT of the input node
+          const newNodes: Node<NodeData>[] = options.map(
+            (option: string, index: number) => {
+              const id = getId();
+
+              // Base distance from input node
+              const distance = 500; // Horizontal distance to the left (increased from 350px to 500px)
+
+              // For horizontal spacing, use a simple pattern:
+              // Place all nodes at the same distance to the left
+              const xPos = latestSourceNode.position.x - distance;
+
+              // Calculate vertical position with more spacing between nodes
+              // Increase spacing from 75px to 150px for better visual separation
+              const spacing = 150; // increased from 75px to 150px
+              const totalHeight = spacing * (options.length - 1);
+              const startY = latestSourceNode.position.y - totalHeight / 2;
+              const yPos = startY + index * spacing;
+
+              // Calculate age value for backward nodes (all one step before the input node)
+              const currentAge = latestSourceNode.data.timelineValue || 22;
+              const backwardAge = Math.max(20, currentAge - 5); // Reduce by 5 years for backward planning
+
+              return {
+                id,
+                type: "custom",
+                data: {
+                  type: "value",
+                  value: option,
+                  timelineValue: backwardAge,
+                  onReshuffleContext: () => reshuffleContext(id),
+                },
+                position: {
+                  x: xPos,
+                  y: yPos,
+                },
+              };
+            }
+          );
+
+          // Add new nodes and update loading state
+          const updatedNodes = [...currentNodes, ...newNodes].map((n) =>
+            n.id === nodeId
+              ? { ...n, data: { ...n.data, generatingOptions: false } }
+              : n
+          );
+
+          // Create edges between generated nodes and to the input node
+          setEdges((eds) => {
+            // Connect all backward nodes directly to the input node's backward-target handle
+            const newEdges = newNodes.map((node) => ({
+              id: `e${node.id}-to-input`,
+              source: node.id,
+              target: latestSourceNode.id,
+              targetHandle: "backward-target", // Specify the left target handle on the input node
+              type: "default",
+            }));
+
+            return [...eds, ...newEdges];
+          });
+
+          return updatedNodes;
+        });
+      } catch (error) {
+        // Clear loading state on error
+        setNodes((nds) =>
+          nds.map((n) =>
+            n.id === nodeId
+              ? { ...n, data: { ...n.data, generatingOptions: false } }
+              : n
+          )
+        );
+        console.error("Error generating backward options:", error);
+      }
+    },
+    [setNodes, getTimelineValue]
+  );
 
   // Handle manual age updates from dragging the age badge
   const handleUpdateAge = useCallback(
@@ -762,6 +784,126 @@ Return them in this exact JSON format, with no other text:
     [setNodes]
   );
 
+  // Handle reshuffling a context node with a new value
+  const reshuffleContext = useCallback(
+    async (nodeId: string) => {
+      try {
+        // Get the current node and set loading state
+        const nodeInfo = await new Promise<{ node: Node<NodeData> }>(
+          (resolve, reject) => {
+            setNodes((currentNodes) => {
+              const node = currentNodes.find((n) => n.id === nodeId);
+              if (!node) {
+                reject(new Error("Node not found"));
+                return currentNodes;
+              }
+
+              // Mark as loading and capture node info
+              resolve({ node });
+
+              // Set loading state
+              return currentNodes.map((n) =>
+                n.id === nodeId
+                  ? { ...n, data: { ...n.data, isLoading: true } }
+                  : n
+              );
+            });
+          }
+        );
+
+        const { node } = nodeInfo;
+
+        // Get the age value to determine context
+        const age = node.data.timelineValue || 22;
+        const normalizedAge = age % 100; // Normalize to 0-99 cycle
+
+        // Generate age-specific context prompt
+        let ageContext = "";
+        if (normalizedAge < 30) {
+          ageContext =
+            "You are in your 20s. You have plenty of time for long-term planning.";
+        } else if (normalizedAge < 40) {
+          ageContext =
+            "You are in your 30s. You should balance immediate needs with future planning.";
+        } else if (normalizedAge < 50) {
+          ageContext =
+            "You are in your 40s. You should focus on career advancement and financial security.";
+        } else if (normalizedAge < 60) {
+          ageContext =
+            "You are in your 50s. You should prepare for retirement and focus on health.";
+        } else if (normalizedAge < 70) {
+          ageContext =
+            "You are in your 60s. You should transition to retirement and maintain health.";
+        } else if (normalizedAge < 80) {
+          ageContext =
+            "You are in your 70s. You should focus on health and enjoying retirement.";
+        } else {
+          ageContext =
+            "You are in your 80s or older. You should focus on health, family and legacy.";
+        }
+
+        // Generate a new context based on the node's current value and age
+        const response = await fetch("https://api.cohere.ai/v1/generate", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${process.env.NEXT_PUBLIC_COHERE_API_KEY}`,
+          },
+          body: JSON.stringify({
+            model: "command",
+            prompt: `Generate an alternative to this action/context: "${
+              node.data.value
+            }"
+${ageContext ? ageContext + "\n" : ""}
+Create 1 alternative action that is similar in theme but different in approach (max 15 words).
+Make it specific, practical, and appropriate for someone of this age.
+Return only the text of the action, with no quotes or extra formatting.`,
+            max_tokens: 100,
+            temperature: 0.8, // Slightly higher temperature for more variation
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`Failed to reshuffle context: ${response.status}`);
+        }
+
+        const data = await response.json();
+        const newContext = data.generations?.[0]?.text?.trim();
+
+        if (!newContext) {
+          throw new Error("Invalid response format from Cohere API");
+        }
+
+        // Update the node with the new context
+        setNodes((nds) =>
+          nds.map((n) =>
+            n.id === nodeId
+              ? {
+                  ...n,
+                  data: {
+                    ...n.data,
+                    value: newContext,
+                    isLoading: false,
+                  },
+                }
+              : n
+          )
+        );
+      } catch (error) {
+        console.error("Error reshuffling context:", error);
+        // Clear loading state on error
+        setNodes((nds) =>
+          nds.map((n) =>
+            n.id === nodeId
+              ? { ...n, data: { ...n.data, isLoading: false } }
+              : n
+          )
+        );
+      }
+    },
+    [setNodes]
+  );
+
   // Update the initial node
   useEffect(() => {
     setNodes((nds) =>
@@ -777,12 +919,13 @@ Return them in this exact JSON format, with no other text:
                   generateBackwardOptions(context, node.id),
                 onUpdateAge: (newAge: number) =>
                   handleUpdateAge(node.id, newAge),
+                onReshuffleContext: () => reshuffleContext(node.id),
               },
             }
           : node
       )
     );
-  }, []);
+  }, []); // Use empty dependency array, the callbacks are now stable
 
   // Prevent deletion of the input node and handle edge deletion for operator nodes
   const onNodesChangeWithProtection = useCallback(
@@ -816,19 +959,6 @@ Return them in this exact JSON format, with no other text:
     },
     [setEdges, onNodesChange]
   );
-
-  // Add function to calculate timeline value from x position
-  const getTimelineValue = useCallback((xPos: number) => {
-    // Base age is 20
-    const baseAge = 20;
-
-    // Map x position to timeline value (20-99 range)
-    // Every 100px increment represents roughly one decade
-    const offset = Math.round(xPos / 100);
-
-    // Clamp value between min and max
-    return Math.max(baseAge, Math.min(99, baseAge + offset));
-  }, []);
 
   // Handle node dragging
   const onNodeDrag = useCallback(
@@ -1083,7 +1213,7 @@ Return them in this exact JSON format, with no other text:
         defaultViewport={{
           x: 0,
           y: 0,
-          zoom: 1.5,
+          zoom: 0.8,
         }}
         fitViewOptions={{
           padding: 2,
@@ -1113,7 +1243,7 @@ Return them in this exact JSON format, with no other text:
         fitView
       >
         <Background color="#fff" gap={20} style={{ zIndex: 0, opacity: 0.5 }} />
-        {/* <Timeline min={20} max={24} /> */}
+        <Timeline height={70} spacingFactor={1.5} />
         {contextMenu && (
           <ContextMenu
             x={contextMenu.x}
@@ -1135,6 +1265,7 @@ Return them in this exact JSON format, with no other text:
                     generateBackwardOptions(context, newNodeId),
                   onUpdateAge: (newAge: number) =>
                     handleUpdateAge(newNodeId, newAge),
+                  onReshuffleContext: () => reshuffleContext(newNodeId),
                 },
               };
               setNodes((nds) => [...nds, newNode]);
