@@ -14,13 +14,29 @@ import {
   Node,
   NodeTypes,
   NodeChange,
+  useStore,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import CustomNode from "@/components/CustomNode";
 import ConnectionLine from "@/components/ConnectionLine";
-import Timeline from "@/components/Timeline";
 import InputNode from "@/components/InputNode";
 import ContextMenu from "@/components/ContextMenu";
+import Timeline from "@/components/Timeline";
+
+// Utility function to map timeline values (0-80) to age ranges
+const mapTimelineValueToAge = (timelineValue?: number | null): number => {
+  if (timelineValue === undefined || timelineValue === null) {
+    return 22; // Default age if no timeline value
+  }
+  
+  // Direct mapping - timeline value is the age
+  return timelineValue;
+};
+
+// Inverse function to get timeline value from age - in this case, they're the same
+const ageToTimelineValue = (age: number): number => {
+  return age;
+};
 
 type NodeData = {
   type: "operator" | "value" | "input";
@@ -29,11 +45,10 @@ type NodeData = {
   inputs?: string[];
   sourceIds?: string[];
   history?: string[];
-  timelineValue?: number;
   onGenerate?: (context: string) => Promise<void>;
   isLoading?: boolean;
   generatingOptions?: boolean;
-  onGenerateBackward?: (context: string) => Promise<void>;
+  timelinePosition?: number;
   onUpdateAge?: (newAge: number) => void;
   [key: string]: unknown;
 };
@@ -50,8 +65,10 @@ const initialNodes: Node<NodeData>[] = [
     data: {
       type: "input",
       value: "",
+      timelineValue: 20, // Set initial timeline value to age 20
+      timelinePosition: 20, // Set initial position to match
     },
-    position: { x: 0, y: 50 },
+    position: { x: 300, y: 50 }, // Position = age * 15 = 20 * 15 = 300
   },
 ];
 
@@ -235,23 +252,9 @@ function calculateNodeResults(nodes: Node<NodeData>[], edges: Edge[]) {
   });
 }
 
-function getRandomNodeData(
-  sourceNodeType?: string,
-  handleId?: string
-): NodeData {
-  // If dragging from the left handle of an input node, create a "precursor" value node
-  if (sourceNodeType === "input" && handleId === "backward") {
-    return {
-      type: "value",
-      value: "Prerequisite step...",
-    };
-  }
-
-  // If dragging from a value or input node (right handle), always create an operator node
-  if (
-    sourceNodeType === "value" ||
-    (sourceNodeType === "input" && handleId !== "backward")
-  ) {
+function getRandomNodeData(sourceNodeType?: string): NodeData {
+  // If dragging from a value or input node, always create an operator node
+  if (sourceNodeType === "value" || sourceNodeType === "input") {
     const operators = ["+", "-", "*", "%"];
     return {
       type: "operator",
@@ -276,6 +279,27 @@ function Flow() {
     useNodesState<Node<NodeData>>(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
   const { screenToFlowPosition, getViewport } = useReactFlow();
+  
+  // Add proper conversion between position coordinates and timeline values
+  const positionToTimelineValue = useCallback((xPos: number): number => {
+    // Simple linear conversion from x position to age
+    // Scale down the ReactFlow coordinates to a reasonable age range (0-80)
+    const scaledValue = Math.max(0, Math.round(xPos / 35));
+    return scaledValue;
+  }, []);
+  
+  const timelineValueToPosition = useCallback((value: number): number => {
+    // Convert a timeline/age value back to a position in ReactFlow coordinates
+    // Increase multiplier to position nodes further to the right
+    return value * 35;
+  }, []);
+  
+  // Comment out viewport tracking 
+  // const viewport = useStore((state) => ({
+  //   x: state.transform[0],
+  //   y: state.transform[1],
+  //   zoom: state.transform[2]
+  // }));
 
   // Add new state for context menu
   const [contextMenu, setContextMenu] = useState<{
@@ -286,39 +310,28 @@ function Flow() {
 
   // Add Cohere API call function
   const generateOptions = async (context: string, nodeId: string) => {
-    if (!process.env.NEXT_PUBLIC_COHERE_API_KEY) {
-      console.error("Cohere API key is not configured");
-      return;
-    }
-
     try {
-      // Get node info and set loading state in a single operation
-      const nodeInfo = await new Promise<{ sourceNode: Node<NodeData> }>(
-        (resolve, reject) => {
-          setNodes((currentNodes) => {
-            const sourceNode = currentNodes.find((n) => n.id === nodeId);
-            if (!sourceNode) {
-              reject(new Error("Source node not found"));
-              return currentNodes; // Return unchanged state
-            }
+      if (!process.env.NEXT_PUBLIC_COHERE_API_KEY) {
+        throw new Error("Cohere API key is not configured");
+      }
 
-            // Mark as loading and capture node info
-            resolve({ sourceNode });
-
-            // Set loading state
-            return currentNodes.map((n) =>
-              n.id === nodeId
-                ? { ...n, data: { ...n.data, generatingOptions: true } }
-                : n
-            );
-          });
-        }
+      // Set loading state
+      setNodes((nds) =>
+        nds.map((n) =>
+          n.id === nodeId
+            ? { ...n, data: { ...n.data, generatingOptions: true } }
+            : n
+        )
       );
 
-      const { sourceNode } = nodeInfo;
+      // Find the operator node by ID
+      const sourceOperatorNode = nodes.find((n) => n.id === nodeId);
+      if (!sourceOperatorNode) {
+        throw new Error("Source operator node not found");
+      }
 
       // Get the age value to determine context
-      const age = sourceNode.data.timelineValue || 22;
+      const age = mapTimelineValueToAge(sourceOperatorNode.data.timelineValue as number | undefined);
       const normalizedAge = age % 100; // Normalize to 0-99 cycle
 
       // Customize prompt based on age
@@ -326,25 +339,25 @@ function Flow() {
 
       if (normalizedAge < 30) {
         ageContext =
-          "You are in your 20s. You have plenty of time for long-term planning.";
+          `You are ${age} years old. You have plenty of time for long-term planning.`;
       } else if (normalizedAge < 40) {
         ageContext =
-          "You are in your 30s. You should balance immediate needs with future planning.";
+          `You are ${age} years old. You should balance immediate needs with future planning.`;
       } else if (normalizedAge < 50) {
         ageContext =
-          "You are in your 40s. You should focus on career advancement and financial security.";
+          `You are ${age} years old. You should focus on career advancement and financial security.`;
       } else if (normalizedAge < 60) {
         ageContext =
-          "You are in your 50s. You should prepare for retirement and focus on health.";
+          `You are ${age} years old. You should prepare for retirement and focus on health.`;
       } else if (normalizedAge < 70) {
         ageContext =
-          "You are in your 60s. You should transition to retirement and maintain health.";
+          `You are ${age} years old. You should transition to retirement and maintain health.`;
       } else if (normalizedAge < 80) {
         ageContext =
-          "You are in your 70s. You should focus on health and enjoying retirement.";
+          `You are ${age} years old. You should focus on health and enjoying retirement.`;
       } else {
         ageContext =
-          "You are in your 80s or older. You should focus on health, family and legacy.";
+          `You are ${age} years old. You should focus on health, family and legacy.`;
       }
 
       const response = await fetch("https://api.cohere.ai/v1/generate", {
@@ -419,95 +432,83 @@ Return them in this exact JSON format, with no other text:
         throw new Error("Invalid options format from Cohere API");
       }
 
-      // Create new nodes with the latest node position
-      setNodes((currentNodes) => {
-        // Get the latest version of the source node
-        const latestSourceNode = currentNodes.find((n) => n.id === nodeId);
-        if (!latestSourceNode) {
-          // This shouldn't happen since we already checked earlier
-          console.error("Source node disappeared during processing");
-          return currentNodes;
+      // Create new nodes for each option
+      const newNodes: Node<NodeData>[] = options.map(
+        (option: string, index: number) => {
+          const id = getId();
+          // Calculate positions in a forward-facing arc
+          const angle = (Math.PI / 6) * (index - 1); // Less spread (-30 to 30 degrees)
+          const distance = 350; // Increased safe distance
+
+          // Calculate position - ensure x is always positive (forward)
+          const xPos =
+            sourceOperatorNode.position.x + Math.cos(angle) * distance;
+          const yPos =
+            sourceOperatorNode.position.y + Math.sin(angle) * distance;
+
+          // Check for potential collisions with existing nodes
+          const nodeWidth = 250; // Approximate node width
+          const nodeHeight = 150; // Approximate node height
+
+          // Create some padding around the node
+          const nodePadding = 50;
+
+          // Find if this position would collide with any existing node
+          const wouldCollide = nodes.some((existingNode) => {
+            // Skip checking against the source node itself
+            if (existingNode.id === sourceOperatorNode.id) return false;
+
+            const distX = Math.abs(existingNode.position.x - xPos);
+            const distY = Math.abs(existingNode.position.y - yPos);
+
+            // If the distance is less than the combined half widths/heights + padding, they collide
+            return (
+              distX < nodeWidth + nodePadding &&
+              distY < nodeHeight + nodePadding
+            );
+          });
+
+          // If collision detected, adjust the distance outward
+          const finalDistance = wouldCollide ? distance * 1.5 : distance;
+          const finalXPos =
+            sourceOperatorNode.position.x + Math.cos(angle) * finalDistance;
+          const finalYPos =
+            sourceOperatorNode.position.y + Math.sin(angle) * finalDistance;
+
+          return {
+            id,
+            type: "custom",
+            data: {
+              type: "value",
+              value: option,
+            },
+            position: {
+              x: finalXPos,
+              y: finalYPos,
+            },
+          };
         }
+      );
 
-        // Create new nodes for each option
-        const newNodes: Node<NodeData>[] = options.map(
-          (option: string, index: number) => {
-            const id = getId();
-            // Calculate positions in a forward-facing arc
-            const angle = (Math.PI / 6) * (index - 1); // Less spread (-30 to 30 degrees)
-            const distance = 350; // Increased safe distance
-
-            // Calculate position - ensure x is always positive (forward)
-            const xPos =
-              latestSourceNode.position.x + Math.cos(angle) * distance;
-            const yPos =
-              latestSourceNode.position.y + Math.sin(angle) * distance;
-
-            // Check for potential collisions with existing nodes
-            const nodeWidth = 250; // Approximate node width
-            const nodeHeight = 150; // Approximate node height
-
-            // Create some padding around the node
-            const nodePadding = 50;
-
-            // Find if this position would collide with any existing node
-            const wouldCollide = currentNodes.some((existingNode) => {
-              // Skip checking against the source node itself
-              if (existingNode.id === latestSourceNode.id) return false;
-
-              const distX = Math.abs(existingNode.position.x - xPos);
-              const distY = Math.abs(existingNode.position.y - yPos);
-
-              // If the distance is less than the combined half widths/heights + padding, they collide
-              return (
-                distX < nodeWidth + nodePadding &&
-                distY < nodeHeight + nodePadding
-              );
-            });
-
-            // If collision detected, adjust the distance outward
-            const finalDistance = wouldCollide ? distance * 1.5 : distance;
-            const finalXPos =
-              latestSourceNode.position.x + Math.cos(angle) * finalDistance;
-            const finalYPos =
-              latestSourceNode.position.y + Math.sin(angle) * finalDistance;
-
-            return {
-              id,
-              type: "custom",
-              data: {
-                type: "value",
-                value: option,
-                timelineValue: getTimelineValue(finalXPos),
-              },
-              position: {
-                x: finalXPos,
-                y: finalYPos,
-              },
-            };
-          }
-        );
-
-        // Add new nodes and update loading state
-        const updatedNodes = [...currentNodes, ...newNodes].map((n) =>
+      // Add new nodes and edges
+      setNodes((nds) => {
+        const updatedNodes = [...nds, ...newNodes].map((n) =>
           n.id === nodeId
             ? { ...n, data: { ...n.data, generatingOptions: false } }
             : n
         );
-
-        // Create edges for the new nodes
-        setEdges((eds) => [
-          ...eds,
-          ...newNodes.map((node) => ({
-            id: `e${node.id}`,
-            source: latestSourceNode.id,
-            target: node.id,
-            type: "default",
-          })),
-        ]);
-
         return updatedNodes;
       });
+
+      setEdges((eds) => [
+        ...eds,
+        ...newNodes.map((node) => ({
+          id: `e${node.id}`,
+          source: sourceOperatorNode.id,
+          target: node.id,
+          type: "default",
+        })),
+      ]);
     } catch (error) {
       // Clear loading state on error
       setNodes((nds) =>
@@ -555,7 +556,7 @@ Return them in this exact JSON format, with no other text:
       const { sourceNode } = nodeInfo;
 
       // Get the age value to determine context
-      const age = sourceNode.data.timelineValue || 22;
+      const age = mapTimelineValueToAge(sourceNode.data.timelineValue as number | undefined);
       const normalizedAge = age % 100; // Normalize to 0-99 cycle
 
       // Customize prompt based on age
@@ -563,25 +564,25 @@ Return them in this exact JSON format, with no other text:
 
       if (normalizedAge < 30) {
         ageContext =
-          "You are in your 20s. You have plenty of time for long-term planning.";
+          `You are ${age} years old. You have plenty of time for long-term planning.`;
       } else if (normalizedAge < 40) {
         ageContext =
-          "You are in your 30s. You should balance immediate needs with future planning.";
+          `You are ${age} years old. You should balance immediate needs with future planning.`;
       } else if (normalizedAge < 50) {
         ageContext =
-          "You are in your 40s. You should focus on career advancement and financial security.";
+          `You are ${age} years old. You should focus on career advancement and financial security.`;
       } else if (normalizedAge < 60) {
         ageContext =
-          "You are in your 50s. You should prepare for retirement and focus on health.";
+          `You are ${age} years old. You should prepare for retirement and focus on health.`;
       } else if (normalizedAge < 70) {
         ageContext =
-          "You are in your 60s. You should transition to retirement and maintain health.";
+          `You are ${age} years old. You should transition to retirement and maintain health.`;
       } else if (normalizedAge < 80) {
         ageContext =
-          "You are in your 70s. You should focus on health and enjoying retirement.";
+          `You are ${age} years old. You should focus on health and enjoying retirement.`;
       } else {
         ageContext =
-          "You are in your 80s or older. You should focus on health, family and legacy.";
+          `You are ${age} years old. You should focus on health, family and legacy.`;
       }
 
       const response = await fetch("https://api.cohere.ai/v1/generate", {
@@ -686,8 +687,13 @@ Return them in this exact JSON format, with no other text:
             const yPos = startY + index * spacing;
 
             // Calculate age value for backward nodes (all one step before the input node)
-            const currentAge = latestSourceNode.data.timelineValue || 22;
-            const backwardAge = Math.max(20, currentAge - 5); // Reduce by 5 years for backward planning
+            const currentAge = mapTimelineValueToAge(latestSourceNode.data.timelineValue as number | undefined);
+            const backwardAge = Math.max(1, currentAge - 5); // Reduce by 5 years for backward planning, minimum age 1
+            
+            // Convert age back to timeline value
+            const backwardTimelineValue = ageToTimelineValue(backwardAge);
+            // Convert timeline value to appropriate ReactFlow position
+            const backwardXPosition = timelineValueToPosition(backwardTimelineValue);
 
             return {
               id,
@@ -695,10 +701,11 @@ Return them in this exact JSON format, with no other text:
               data: {
                 type: "value",
                 value: option,
-                timelineValue: backwardAge,
+                timelineValue: backwardTimelineValue,
+                timelinePosition: backwardTimelineValue,
               },
               position: {
-                x: xPos,
+                x: backwardXPosition, // Use calculated position based on timeline value
                 y: yPos,
               },
             };
@@ -744,14 +751,23 @@ Return them in this exact JSON format, with no other text:
   // Handle manual age updates from dragging the age badge
   const handleUpdateAge = useCallback(
     (nodeId: string, newAge: number) => {
+      // Convert age to timeline value
+      const newTimelineValue = ageToTimelineValue(newAge);
+      
       setNodes((nds) =>
         nds.map((n) => {
           if (n.id === nodeId) {
+            const newPosition = { ...n.position };
+            // Update x position to match the timeline value using our conversion
+            newPosition.x = timelineValueToPosition(newTimelineValue);
+            
             return {
               ...n,
+              position: newPosition, // Update actual position
               data: {
                 ...n.data,
-                timelineValue: newAge,
+                timelineValue: newTimelineValue,
+                timelinePosition: newTimelineValue,
               },
             };
           }
@@ -759,30 +775,37 @@ Return them in this exact JSON format, with no other text:
         })
       );
     },
-    [setNodes]
+    [setNodes, timelineValueToPosition]
   );
 
   // Update the initial node
   useEffect(() => {
     setNodes((nds) =>
-      nds.map((node) =>
-        node.id === "0"
-          ? {
-              ...node,
-              data: {
-                ...node.data,
-                onGenerate: (context: string) =>
-                  generateOptions(context, node.id),
-                onGenerateBackward: (context: string) =>
-                  generateBackwardOptions(context, node.id),
-                onUpdateAge: (newAge: number) =>
-                  handleUpdateAge(node.id, newAge),
-              },
-            }
-          : node
-      )
+      nds.map((node) => {
+        if (node.id === "0") {
+          const ageValue = 20; // Age 20
+          const nodePosition = timelineValueToPosition(ageValue); // Convert to position
+          
+          return {
+            ...node,
+            position: { ...node.position, x: nodePosition }, // Update position to match age 20
+            data: {
+              ...node.data,
+              timelineValue: ageValue,
+              timelinePosition: ageValue,
+              onGenerate: (context: string) =>
+                generateOptions(context, node.id),
+              onGenerateBackward: (context: string) =>
+                generateBackwardOptions(context, node.id),
+              onUpdateAge: (newAge: number) =>
+                handleUpdateAge(node.id, newAge),
+            },
+          };
+        }
+        return node;
+      })
     );
-  }, []);
+  }, [timelineValueToPosition, handleUpdateAge]);
 
   // Prevent deletion of the input node and handle edge deletion for operator nodes
   const onNodesChangeWithProtection = useCallback(
@@ -817,22 +840,12 @@ Return them in this exact JSON format, with no other text:
     [setEdges, onNodesChange]
   );
 
-  // Add function to calculate timeline value from x position
-  const getTimelineValue = useCallback((xPos: number) => {
-    // Base age is 20
-    const baseAge = 20;
-
-    // Map x position to timeline value (20-99 range)
-    // Every 100px increment represents roughly one decade
-    const offset = Math.round(xPos / 100);
-
-    // Clamp value between min and max
-    return Math.max(baseAge, Math.min(99, baseAge + offset));
-  }, []);
-
   // Handle node dragging
   const onNodeDrag = useCallback(
     (event: React.MouseEvent, node: Node<NodeData>) => {
+      // Convert the node's pixel position to a timeline value
+      const timelineValue = positionToTimelineValue(node.position.x);
+      
       setNodes((nds) =>
         nds.map((n) => {
           if (n.id === node.id) {
@@ -840,7 +853,8 @@ Return them in this exact JSON format, with no other text:
               ...n,
               data: {
                 ...n.data,
-                timelineValue: getTimelineValue(node.position.x),
+                timelinePosition: timelineValue,
+                timelineValue: timelineValue, // Update timelineValue in real-time during drag
               },
             };
           }
@@ -848,20 +862,24 @@ Return them in this exact JSON format, with no other text:
         })
       );
     },
-    [getTimelineValue, setNodes]
+    [setNodes, positionToTimelineValue]
   );
 
   // Handle node drag stop
   const onNodeDragStop = useCallback(
     (event: React.MouseEvent, node: Node<NodeData>) => {
-      setNodes((nds) =>
-        nds.map((n) => {
+      // Convert the node's pixel position to a timeline value
+      const timelineValue = positionToTimelineValue(node.position.x);
+      
+      setNodes((nodes) =>
+        nodes.map((n) => {
           if (n.id === node.id) {
             return {
               ...n,
               data: {
                 ...n.data,
-                timelineValue: getTimelineValue(node.position.x),
+                timelinePosition: timelineValue,
+                timelineValue: timelineValue,
               },
             };
           }
@@ -869,7 +887,7 @@ Return them in this exact JSON format, with no other text:
         })
       );
     },
-    [getTimelineValue, setNodes]
+    [setNodes, positionToTimelineValue]
   );
 
   // Calculate results when edges change
@@ -921,19 +939,6 @@ Return them in this exact JSON format, with no other text:
 
       if (!targetNode || !sourceNode) return;
 
-      // Check if connecting to input node's backward target handle
-      const isBackwardConnection =
-        targetNode.type === "input" &&
-        params.targetHandle === "backward-target";
-
-      // For backward connections, we always allow them
-      if (isBackwardConnection) {
-        const newEdges = addEdge(params, edges);
-        setEdges(newEdges);
-        return;
-      }
-
-      // Regular connection logic for other handles
       const isDuplicateConnection = targetNode.data.history?.includes(
         sourceNode.id
       );
@@ -993,58 +998,28 @@ Return them in this exact JSON format, with no other text:
         const sourceNode = nodes.find(
           (n) => n.id === connectionState.fromNode.id
         );
+        const sourceNodeType = sourceNode?.data.type;
 
-        if (!sourceNode) return;
-
-        const sourceNodeType = sourceNode.data.type;
-        const handleId = connectionState.handleId || "";
-
-        // Special case: if connecting from left handle of input node
-        if (sourceNodeType === "input" && handleId === "backward-source") {
-          // Get the input value from the source node
-          const inputValue = String(sourceNode.data.value || "");
-
-          if (inputValue.trim()) {
-            // Generate backward options based on the input value
-            generateBackwardOptions(inputValue, sourceNode.id).catch(
-              console.error
-            );
-          }
-          return;
-        }
-
-        const nodeData = getRandomNodeData(sourceNodeType, handleId);
+        const nodeData = getRandomNodeData(sourceNodeType);
+        const timelineValue = positionToTimelineValue(position.x);
+        
         const newNode: Node<NodeData> = {
           id,
           type: "custom",
           position,
           data: {
             ...nodeData,
-            timelineValue: getTimelineValue(position.x),
+            timelineValue: timelineValue,
+            timelinePosition: timelineValue,
           },
         };
 
-        // Determine edge source and target based on handle
-        let source = connectionState.fromNode.id;
-        let target = id;
-        let sourceHandle = connectionState.handleId;
-        let targetHandle = null;
-
-        // If connecting from backward handle, reverse the edge direction
-        if (handleId === "backward-source") {
-          source = id;
-          target = connectionState.fromNode.id;
-          sourceHandle = null;
-          targetHandle = "backward-target";
-        }
-
         const newEdge: Edge = {
           id,
-          source,
-          target,
-          sourceHandle,
-          targetHandle,
+          source: connectionState.fromNode.id,
+          target: id,
           type: "default",
+          sourceHandle: connectionState.handleId,
         };
 
         setNodes((nds) => {
@@ -1055,7 +1030,7 @@ Return them in this exact JSON format, with no other text:
         setEdges((eds) => [...eds, newEdge]);
       }
     },
-    [screenToFlowPosition, edges, getTimelineValue, nodes]
+    [screenToFlowPosition, edges, nodes, positionToTimelineValue]
   );
 
   return (
@@ -1113,7 +1088,6 @@ Return them in this exact JSON format, with no other text:
         fitView
       >
         <Background color="#fff" gap={20} style={{ zIndex: 0, opacity: 0.5 }} />
-        {/* <Timeline min={20} max={24} /> */}
         {contextMenu && (
           <ContextMenu
             x={contextMenu.x}
@@ -1128,7 +1102,9 @@ Return them in this exact JSON format, with no other text:
                 data: {
                   type: "input",
                   value: "",
-                  timelineValue: getTimelineValue(contextMenu.flowPosition.x),
+                  // Set timeline values based on x position
+                  timelineValue: positionToTimelineValue(contextMenu.flowPosition.x),
+                  timelinePosition: positionToTimelineValue(contextMenu.flowPosition.x),
                   onGenerate: (context: string) =>
                     generateOptions(context, newNodeId),
                   onGenerateBackward: (context: string) =>
@@ -1143,6 +1119,7 @@ Return them in this exact JSON format, with no other text:
           />
         )}
       </ReactFlow>
+      <Timeline height={48} />
     </div>
   );
 }

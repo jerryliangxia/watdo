@@ -1,4 +1,4 @@
-import { memo, useState } from "react";
+import { memo, useState, useEffect } from "react";
 import {
   Handle,
   Position,
@@ -17,11 +17,12 @@ export interface CustomNodeData extends Record<string, unknown> {
   inputs?: string[];
   sourceIds?: string[]; // Array of source node IDs
   history?: string[]; // Changed from number[] to string[] to store IDs
-  timelineValue?: number;
   isLoading?: boolean;
   generatingOptions?: boolean;
   onGenerate?: (context: string) => Promise<void>;
   onUpdateAge?: (newAge: number) => void;
+  timelinePosition?: number;
+  timelineValue?: number;
 }
 
 const OPERATORS = ["+", "-", "*", "%"];
@@ -31,16 +32,63 @@ const CustomNode = memo(
     const isOperator = data.type === "operator";
     // Number of current connections plus one empty slot for new connections
     const numHandles = (data.inputs?.length || 0) + 1;
-    const { setNodes } = useReactFlow();
+    const { setNodes, getNode } = useReactFlow();
     const [isHoveringAge, setIsHoveringAge] = useState(false);
     const [isDraggingAge, setIsDraggingAge] = useState(false);
+    
+    // Get current viewport transform to calculate dynamic timeline value
+    const transform = useStore((state) => state.transform);
+    
+    // Store the initial timeline position when the node is created
+    useEffect(() => {
+      // Only set the initial timeline position if it's not already set
+      if (data.timelinePosition === undefined) {
+        const node = getNode(id);
+        if (node) {
+          // Store the absolute x position as the timeline position
+          // Constrain to the 0-80 range
+          const constrainedPosition = Math.max(0, Math.min(80, node.position.x));
+          
+          setNodes((nodes) =>
+            nodes.map((n) => {
+              if (n.id === id) {
+                return {
+                  ...n,
+                  data: {
+                    ...n.data,
+                    timelinePosition: constrainedPosition,
+                  },
+                };
+              }
+              return n;
+            })
+          );
+        }
+      }
+    }, [id, data.timelinePosition, getNode, setNodes]);
+    
+    // Dynamically calculate timeline value based on position and viewport
+    const calculateTimelineValue = () => {
+      const [viewportX, _, zoom] = transform;
+      const baseValue = 20 + Math.floor(-viewportX / (100 * zoom));
+      
+      // Get the current node to access its position
+      const node = getNode(id);
+      const xPosition = node?.position?.x || 0;
+      
+      // Constrain the calculated value to be between 0 and 80
+      const value = Math.round(baseValue + xPosition / (100 * zoom));
+      return Math.max(0, Math.min(80, value));
+    };
 
     // Get the age value from timelineValue (defaults to 22 if not set)
-    const age = data.timelineValue || 22;
+    // IMPORTANT: We prioritize the timelineValue passed from parent and only calculate dynamically if not set
+    const age = data.timelineValue !== undefined ? data.timelineValue : calculateTimelineValue();
 
     // Get color based on age ranges with smoother transitions
     const getUrgencyColor = () => {
-      const normalizedAge = age % 100; // Convert to 0-99 range for cyclical colors
+      // Ensure age is treated as a number for calculations
+      const normalizedAge = (age as number) % 100; // Convert to 0-99 range for cyclical colors
 
       // Define our color stops with age ranges and hex colors
       const colorStops = [
@@ -109,7 +157,7 @@ const CustomNode = memo(
 
       // Round to the nearest integer
       const newAge = Math.round(
-        Math.max(0, Math.min(99, data.timelineValue + ageChange))
+        Math.max(0, Math.min(99, (data.timelineValue as number) + ageChange))
       );
 
       // Only update if the age actually changed
@@ -292,6 +340,13 @@ const CustomNode = memo(
             Drag to adjust age
           </div>
         )}
+
+        {/* Node ID display */}
+        <div className="absolute -top-2 -right-2 flex gap-1">
+          <div className="text-[10px] px-1 rounded bg-gray-700 text-white opacity-75">
+            #{id}
+          </div>
+        </div>
 
         {/* Input handles for operators */}
         {isOperator && (
