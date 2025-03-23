@@ -155,6 +155,48 @@ function Flow() {
 
   // Modify onNodesChange to update timeline values
   const onNodesChangeWithTimeline = (changes: NodeChange<Node<NodeData>>[]) => {
+    // Handle node deletions first
+    const deletedNodeIds = changes
+      .filter((change) => change.type === "remove")
+      .map((change) => change.id);
+
+    if (deletedNodeIds.length > 0) {
+      // Remove edges connected to deleted nodes
+      setEdges((eds) =>
+        eds.filter(
+          (edge) =>
+            !deletedNodeIds.includes(edge.source) &&
+            !deletedNodeIds.includes(edge.target)
+        )
+      );
+
+      // Clean up references and recalculate
+      setNodes((nds) => {
+        // First remove deleted nodes
+        const remainingNodes = nds.filter(
+          (node) => !deletedNodeIds.includes(node.id)
+        );
+
+        // Then clean up references and recalculate
+        return remainingNodes.map((node) => {
+          if (node.data.type === "operator") {
+            return {
+              ...node,
+              data: {
+                ...node.data,
+                inputs: undefined,
+                sourceIds: undefined,
+                result: undefined,
+                history: undefined,
+              },
+            };
+          }
+          return node;
+        });
+      });
+    }
+
+    // Apply other changes
     onNodesChange(changes);
 
     // Update timeline values for moved nodes
@@ -170,6 +212,9 @@ function Flow() {
         };
       })
     );
+
+    // Recalculate results after all changes
+    setNodes((nds) => calculateNodeResults(nds, edges));
   };
 
   // Calculate results when edges change
