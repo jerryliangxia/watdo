@@ -1,103 +1,228 @@
-import Image from "next/image";
+"use client";
+
+import { useCallback, useRef, useEffect, useMemo } from "react";
+import {
+  Background,
+  ReactFlow,
+  useNodesState,
+  useEdgesState,
+  addEdge,
+  useReactFlow,
+  ReactFlowProvider,
+  Connection,
+  Edge,
+  Node,
+  NodeTypes,
+} from "@xyflow/react";
+import "@xyflow/react/dist/style.css";
+import CustomNode from "@/components/CustomNode";
+import ConnectionLine from "@/components/ConnectionLine";
+
+type NodeData = {
+  type: "operator" | "value";
+  value: string | number;
+  result?: number;
+  inputs?: number[];
+  sourceIds?: string[];
+  history?: string[];
+  [key: string]: unknown;
+};
+
+const nodeTypes: NodeTypes = {
+  custom: CustomNode,
+};
+
+const initialNodes: Node<NodeData>[] = [
+  {
+    id: "0",
+    type: "custom",
+    data: {
+      type: "value",
+      value: Math.floor(Math.random() * 4) + 1,
+    },
+    position: { x: 0, y: 50 },
+  },
+];
+
+const initialEdges: Edge[] = [];
+
+let id = 1;
+const getId = () => `${id++}`;
+
+function getRandomNodeData(): NodeData {
+  const isOperator = Math.random() > 0.5;
+  return {
+    type: isOperator ? "operator" : "value",
+    value: isOperator
+      ? ["+", "-"][Math.floor(Math.random() * 2)]
+      : Math.floor(Math.random() * 4) + 1,
+  };
+}
+
+function calculateResult(operator: string, values: number[]): number {
+  if (values.length < 2) return 0;
+  if (operator === "+") {
+    return values.reduce((a, b) => a + b, 0);
+  }
+  return values.reduce((a, b) => a - b);
+}
+
+function calculateNodeResults(nodes: Node<NodeData>[], edges: Edge[]) {
+  const nodeMap = new Map(nodes.map((node) => [node.id, node]));
+
+  return nodes.map((node) => {
+    if (node.data.type === "operator") {
+      // Find incoming edges
+      const incomingEdges = edges.filter((edge) => edge.target === node.id);
+      const sourceNodes = incomingEdges
+        .map((edge) => nodeMap.get(edge.source))
+        .filter((node): node is Node<NodeData> => node !== undefined);
+
+      // Get values and collect source IDs
+      const values: number[] = [];
+      const sourceIds: string[] = [];
+
+      sourceNodes.forEach((sourceNode) => {
+        sourceIds.push(sourceNode.id);
+        if (sourceNode.data.type === "value") {
+          values.push(sourceNode.data.value as number);
+        } else if (sourceNode.data.result !== undefined) {
+          values.push(sourceNode.data.result);
+        }
+      });
+
+      // Calculate result
+      const result = calculateResult(node.data.value as string, values);
+
+      // Return updated node with inputs, result and source IDs as history
+      return {
+        ...node,
+        data: {
+          ...node.data,
+          inputs: values,
+          sourceIds,
+          result,
+          history: sourceIds, // Store IDs in history
+        },
+      };
+    }
+    // For value nodes, set their own ID in history
+    if (node.data.type === "value") {
+      return {
+        ...node,
+        data: {
+          ...node.data,
+          history: [node.id],
+        },
+      };
+    }
+    return node;
+  });
+}
+
+function Flow() {
+  const reactFlowWrapper = useRef<HTMLDivElement>(null);
+  const [nodes, setNodes, onNodesChange] =
+    useNodesState<Node<NodeData>>(initialNodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+  const { screenToFlowPosition } = useReactFlow();
+
+  // Calculate results when edges change
+  const onEdgesChangeWithCalculation = useCallback(
+    (changes: any) => {
+      onEdgesChange(changes);
+      setNodes((nds) => calculateNodeResults(nds, edges));
+    },
+    [edges, onEdgesChange]
+  );
+
+  const onConnect = useCallback(
+    (params: Connection) => {
+      const targetNode = nodes.find((node) => node.id === params.target);
+      const sourceNode = nodes.find((node) => node.id === params.source);
+
+      if (!targetNode || !sourceNode) return;
+
+      const isValidConnection =
+        targetNode.data.type === "operator" ||
+        (sourceNode.data.type === "operator" &&
+          targetNode.data.type === "value");
+
+      if (isValidConnection) {
+        setEdges((eds) => {
+          const newEdges = addEdge(params, eds);
+          // Trigger calculation after adding edge
+          setNodes((nds) => calculateNodeResults(nds, newEdges));
+          return newEdges;
+        });
+      }
+    },
+    [nodes]
+  );
+
+  const onConnectEnd = useCallback(
+    (event: any, connectionState: any) => {
+      if (!connectionState.isValid) {
+        const id = getId();
+        const { clientX, clientY } =
+          "changedTouches" in event ? event.changedTouches[0] : event;
+
+        const position = screenToFlowPosition({
+          x: clientX,
+          y: clientY,
+        });
+
+        const nodeData = getRandomNodeData();
+        const newNode: Node<NodeData> = {
+          id,
+          type: "custom",
+          position,
+          data: nodeData,
+        };
+
+        const newEdge: Edge = {
+          id,
+          source: connectionState.fromNode.id,
+          target: id,
+          type: "default",
+          sourceHandle: connectionState.handleId,
+        };
+
+        setNodes((nds) => {
+          const updatedNodes = [...nds, newNode];
+          // Calculate results for the new configuration
+          return calculateNodeResults(updatedNodes, [...edges, newEdge]);
+        });
+        setEdges((eds) => [...eds, newEdge]);
+      }
+    },
+    [screenToFlowPosition, edges]
+  );
+
+  return (
+    <div className="h-screen w-screen" ref={reactFlowWrapper}>
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChangeWithCalculation}
+        onConnect={onConnect}
+        onConnectEnd={onConnectEnd}
+        nodeTypes={nodeTypes}
+        connectionLineComponent={ConnectionLine}
+        fitView
+        fitViewOptions={{ padding: 2 }}
+      >
+        <Background />
+      </ReactFlow>
+    </div>
+  );
+}
 
 export default function Home() {
   return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm/6 text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-[family-name:var(--font-geist-mono)] font-semibold">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
-
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
-        </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
+    <ReactFlowProvider>
+      <Flow />
+    </ReactFlowProvider>
   );
 }
