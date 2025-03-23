@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useEffect, useMemo, useState } from "react";
+import { useCallback, useRef, useEffect, useState } from "react";
 import {
   Background,
   ReactFlow,
@@ -19,7 +19,6 @@ import {
 import "@xyflow/react/dist/style.css";
 import CustomNode from "@/components/CustomNode";
 import ConnectionLine from "@/components/ConnectionLine";
-import Timeline from "@/components/Timeline";
 import InputNode from "@/components/InputNode";
 import ContextMenu from "@/components/ContextMenu";
 
@@ -289,7 +288,7 @@ function Flow() {
   const [nodes, setNodes, onNodesChange] =
     useNodesState<Node<NodeData>>(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
-  const { screenToFlowPosition, getViewport, getEdges } = useReactFlow();
+  const { screenToFlowPosition, getEdges } = useReactFlow();
 
   // Add function to calculate timeline value from x position
   const getTimelineValue = useCallback((xPos: number) => {
@@ -311,7 +310,127 @@ function Flow() {
     flowPosition: { x: number; y: number };
   } | null>(null);
 
-  // Generate options, generateBackwardOptions and reshuffleContext must be memoized with useCallback
+  // First declare reshuffleContext function
+  const reshuffleContext = useCallback(
+    async (nodeId: string) => {
+      try {
+        // Get the current node and set loading state
+        const nodeInfo = await new Promise<{ node: Node<NodeData> }>(
+          (resolve, reject) => {
+            setNodes((currentNodes) => {
+              const node = currentNodes.find((n) => n.id === nodeId);
+              if (!node) {
+                reject(new Error("Node not found"));
+                return currentNodes;
+              }
+
+              // Mark as loading and capture node info
+              resolve({ node });
+
+              // Set loading state
+              return currentNodes.map((n) =>
+                n.id === nodeId
+                  ? { ...n, data: { ...n.data, isLoading: true } }
+                  : n
+              );
+            });
+          }
+        );
+
+        const { node } = nodeInfo;
+
+        // Get the age value to determine context
+        const age = node.data.timelineValue || 22;
+        const normalizedAge = age % 100; // Normalize to 0-99 cycle
+
+        // Generate age-specific context prompt
+        let ageContext = "";
+        if (normalizedAge < 30) {
+          ageContext =
+            "You are in your 20s. You have plenty of time for long-term planning.";
+        } else if (normalizedAge < 40) {
+          ageContext =
+            "You are in your 30s. You should balance immediate needs with future planning.";
+        } else if (normalizedAge < 50) {
+          ageContext =
+            "You are in your 40s. You should focus on career advancement and financial security.";
+        } else if (normalizedAge < 60) {
+          ageContext =
+            "You are in your 50s. You should prepare for retirement and focus on health.";
+        } else if (normalizedAge < 70) {
+          ageContext =
+            "You are in your 60s. You should transition to retirement and maintain health.";
+        } else if (normalizedAge < 80) {
+          ageContext =
+            "You are in your 70s. You should focus on health and enjoying retirement.";
+        } else {
+          ageContext =
+            "You are in your 80s or older. You should focus on health, family and legacy.";
+        }
+
+        // Generate a new context based on the node's current value and age
+        const response = await fetch("https://api.cohere.ai/v1/generate", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${process.env.NEXT_PUBLIC_COHERE_API_KEY}`,
+          },
+          body: JSON.stringify({
+            model: "command",
+            prompt: `Generate an alternative to this action/context: "${
+              node.data.value
+            }"
+${ageContext ? ageContext + "\n" : ""}
+Create 1 alternative action that is similar in theme but different in approach (max 15 words).
+Make it specific, practical, and appropriate for someone of this age.
+Return only the text of the action, with no quotes or extra formatting.`,
+            max_tokens: 100,
+            temperature: 0.8, // Slightly higher temperature for more variation
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`Failed to reshuffle context: ${response.status}`);
+        }
+
+        const data = await response.json();
+        const newContext = data.generations?.[0]?.text?.trim();
+
+        if (!newContext) {
+          throw new Error("Invalid response format from Cohere API");
+        }
+
+        // Update the node with the new context
+        setNodes((nds) =>
+          nds.map((n) =>
+            n.id === nodeId
+              ? {
+                  ...n,
+                  data: {
+                    ...n.data,
+                    value: newContext,
+                    isLoading: false,
+                  },
+                }
+              : n
+          )
+        );
+      } catch (error) {
+        console.error("Error reshuffling context:", error);
+        // Clear loading state on error
+        setNodes((nds) =>
+          nds.map((n) =>
+            n.id === nodeId
+              ? { ...n, data: { ...n.data, isLoading: false } }
+              : n
+          )
+        );
+      }
+    },
+    [setNodes]
+  );
+
+  // Then declare generateOptions function
   const generateOptions = useCallback(
     async (context: string, nodeId: string) => {
       if (!process.env.NEXT_PUBLIC_COHERE_API_KEY) {
@@ -554,7 +673,7 @@ Return them in this exact JSON format, with no other text:
         console.error("Error generating options:", error);
       }
     },
-    [setNodes, getTimelineValue]
+    [setNodes, getTimelineValue, setEdges, reshuffleContext]
   );
 
   // Add backward planning function
@@ -783,7 +902,7 @@ Return them in this exact JSON format, with no other text:
         console.error("Error generating backward options:", error);
       }
     },
-    [setNodes, getTimelineValue]
+    [setNodes, getTimelineValue, setEdges, reshuffleContext]
   );
 
   // Handle manual age updates from dragging the age badge
@@ -803,126 +922,6 @@ Return them in this exact JSON format, with no other text:
           return n;
         })
       );
-    },
-    [setNodes]
-  );
-
-  // Handle reshuffling a context node with a new value
-  const reshuffleContext = useCallback(
-    async (nodeId: string) => {
-      try {
-        // Get the current node and set loading state
-        const nodeInfo = await new Promise<{ node: Node<NodeData> }>(
-          (resolve, reject) => {
-            setNodes((currentNodes) => {
-              const node = currentNodes.find((n) => n.id === nodeId);
-              if (!node) {
-                reject(new Error("Node not found"));
-                return currentNodes;
-              }
-
-              // Mark as loading and capture node info
-              resolve({ node });
-
-              // Set loading state
-              return currentNodes.map((n) =>
-                n.id === nodeId
-                  ? { ...n, data: { ...n.data, isLoading: true } }
-                  : n
-              );
-            });
-          }
-        );
-
-        const { node } = nodeInfo;
-
-        // Get the age value to determine context
-        const age = node.data.timelineValue || 22;
-        const normalizedAge = age % 100; // Normalize to 0-99 cycle
-
-        // Generate age-specific context prompt
-        let ageContext = "";
-        if (normalizedAge < 30) {
-          ageContext =
-            "You are in your 20s. You have plenty of time for long-term planning.";
-        } else if (normalizedAge < 40) {
-          ageContext =
-            "You are in your 30s. You should balance immediate needs with future planning.";
-        } else if (normalizedAge < 50) {
-          ageContext =
-            "You are in your 40s. You should focus on career advancement and financial security.";
-        } else if (normalizedAge < 60) {
-          ageContext =
-            "You are in your 50s. You should prepare for retirement and focus on health.";
-        } else if (normalizedAge < 70) {
-          ageContext =
-            "You are in your 60s. You should transition to retirement and maintain health.";
-        } else if (normalizedAge < 80) {
-          ageContext =
-            "You are in your 70s. You should focus on health and enjoying retirement.";
-        } else {
-          ageContext =
-            "You are in your 80s or older. You should focus on health, family and legacy.";
-        }
-
-        // Generate a new context based on the node's current value and age
-        const response = await fetch("https://api.cohere.ai/v1/generate", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${process.env.NEXT_PUBLIC_COHERE_API_KEY}`,
-          },
-          body: JSON.stringify({
-            model: "command",
-            prompt: `Generate an alternative to this action/context: "${
-              node.data.value
-            }"
-${ageContext ? ageContext + "\n" : ""}
-Create 1 alternative action that is similar in theme but different in approach (max 15 words).
-Make it specific, practical, and appropriate for someone of this age.
-Return only the text of the action, with no quotes or extra formatting.`,
-            max_tokens: 100,
-            temperature: 0.8, // Slightly higher temperature for more variation
-          }),
-        });
-
-        if (!response.ok) {
-          throw new Error(`Failed to reshuffle context: ${response.status}`);
-        }
-
-        const data = await response.json();
-        const newContext = data.generations?.[0]?.text?.trim();
-
-        if (!newContext) {
-          throw new Error("Invalid response format from Cohere API");
-        }
-
-        // Update the node with the new context
-        setNodes((nds) =>
-          nds.map((n) =>
-            n.id === nodeId
-              ? {
-                  ...n,
-                  data: {
-                    ...n.data,
-                    value: newContext,
-                    isLoading: false,
-                  },
-                }
-              : n
-          )
-        );
-      } catch (error) {
-        console.error("Error reshuffling context:", error);
-        // Clear loading state on error
-        setNodes((nds) =>
-          nds.map((n) =>
-            n.id === nodeId
-              ? { ...n, data: { ...n.data, isLoading: false } }
-              : n
-          )
-        );
-      }
     },
     [setNodes]
   );
@@ -948,7 +947,13 @@ Return only the text of the action, with no quotes or extra formatting.`,
           : node
       )
     );
-  }, []); // Use empty dependency array, the callbacks are now stable
+  }, [
+    generateBackwardOptions,
+    generateOptions,
+    handleUpdateAge,
+    reshuffleContext,
+    setNodes,
+  ]);
 
   // Prevent deletion of the input node and handle edge deletion for operator nodes
   const onNodesChangeWithProtection = useCallback(
@@ -980,7 +985,7 @@ Return only the text of the action, with no quotes or extra formatting.`,
       // Apply the filtered changes
       onNodesChange(safeChanges);
     },
-    [setEdges, onNodesChange]
+    [setEdges, onNodesChange, generateOptions, setNodes]
   );
 
   // Handle node dragging
@@ -1092,7 +1097,7 @@ Return only the text of the action, with no quotes or extra formatting.`,
         setNodes(currentNodes);
       }
     },
-    [edges, nodes, onEdgesChange, getEdges]
+    [edges, nodes, onEdgesChange, getEdges, generateOptions, setNodes]
   );
 
   const onConnect = useCallback(
@@ -1155,12 +1160,19 @@ Return only the text of the action, with no quotes or extra formatting.`,
         }
       }
     },
-    [nodes, edges]
+    [nodes, edges, setEdges, setNodes, generateOptions]
   );
 
   const onConnectEnd = useCallback(
-    (event: any, connectionState: any) => {
-      if (!connectionState.isValid) {
+    (
+      event: MouseEvent | TouchEvent,
+      connectionState: {
+        isValid: boolean | null;
+        fromNode: { id: string } | null;
+        handleId?: string;
+      }
+    ) => {
+      if (connectionState && !connectionState.isValid) {
         const id = getId();
         const { clientX, clientY } =
           "changedTouches" in event ? event.changedTouches[0] : event;
@@ -1172,10 +1184,10 @@ Return only the text of the action, with no quotes or extra formatting.`,
 
         // Get the source node to determine what type of node to create
         const sourceNode = nodes.find(
-          (n) => n.id === connectionState.fromNode.id
+          (n) => n.id === (connectionState.fromNode?.id || "")
         );
 
-        if (!sourceNode) return;
+        if (!sourceNode || !connectionState.fromNode) return;
 
         const sourceNodeType = sourceNode.data.type;
         const handleId = connectionState.handleId || "";
@@ -1209,13 +1221,13 @@ Return only the text of the action, with no quotes or extra formatting.`,
         let source = connectionState.fromNode.id;
         let target = id;
         let sourceHandle = connectionState.handleId;
-        let targetHandle = null;
+        let targetHandle = undefined;
 
         // If connecting from backward handle, reverse the edge direction
         if (handleId === "backward-source") {
           source = id;
           target = connectionState.fromNode.id;
-          sourceHandle = null;
+          sourceHandle = undefined;
           targetHandle = "backward-target";
         }
 
@@ -1236,7 +1248,40 @@ Return only the text of the action, with no quotes or extra formatting.`,
         setEdges((eds) => [...eds, newEdge]);
       }
     },
-    [screenToFlowPosition, edges, getTimelineValue, nodes]
+    [
+      screenToFlowPosition,
+      edges,
+      getTimelineValue,
+      nodes,
+      setNodes,
+      setEdges,
+      generateBackwardOptions,
+    ]
+  );
+
+  // Add the handleContextMenu function back
+  const handleContextMenu = useCallback(
+    (event: React.MouseEvent) => {
+      // Prevent default context menu
+      event.preventDefault();
+
+      // Get the position for the context menu
+      const bounds = reactFlowWrapper.current?.getBoundingClientRect();
+      if (!bounds) return;
+
+      const x = event.clientX - bounds.left;
+      const y = event.clientY - bounds.top;
+
+      // Convert screen position to flow position
+      const flowPosition = screenToFlowPosition({ x, y });
+
+      setContextMenu({
+        x: event.clientX,
+        y: event.clientY,
+        flowPosition,
+      });
+    },
+    [screenToFlowPosition]
   );
 
   return (
@@ -1271,26 +1316,7 @@ Return only the text of the action, with no quotes or extra formatting.`,
           minZoom: 0.8,
           maxZoom: 2.5,
         }}
-        onContextMenu={(event) => {
-          // Prevent default context menu
-          event.preventDefault();
-
-          // Get the position for the context menu
-          const bounds = reactFlowWrapper.current?.getBoundingClientRect();
-          if (!bounds) return;
-
-          const x = event.clientX - bounds.left;
-          const y = event.clientY - bounds.top;
-
-          // Convert screen position to flow position
-          const flowPosition = screenToFlowPosition({ x, y });
-
-          setContextMenu({
-            x: event.clientX,
-            y: event.clientY,
-            flowPosition,
-          });
-        }}
+        onContextMenu={handleContextMenu}
         fitView
       >
         <Background color="#fff" gap={20} style={{ zIndex: 0, opacity: 0.5 }} />

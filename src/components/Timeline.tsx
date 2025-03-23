@@ -13,7 +13,7 @@ const TIMELINE_SCALING_FACTOR = 150; // 150px per decade
 const Timeline = memo(
   ({ className = "", height = 60, spacingFactor = 1.5 }: TimelineProps) => {
     const timelineRef = useRef<HTMLDivElement>(null);
-    const { getNodes, getViewport, setViewport } = useReactFlow();
+    const { getNodes, setViewport } = useReactFlow();
     const [isDragging, setIsDragging] = useState(false);
     const [dragStartX, setDragStartX] = useState(0);
     const [initialTransformX, setInitialTransformX] = useState(0);
@@ -34,7 +34,7 @@ const Timeline = memo(
         const initialZoom = 0.8;
         setViewport({ x: initialX, y, zoom: initialZoom });
       }
-    }, []);
+    }, [setViewport, x, y, zoom]);
 
     // Calculate the visible range based on viewport and container size
     const calculateVisibleRange = () => {

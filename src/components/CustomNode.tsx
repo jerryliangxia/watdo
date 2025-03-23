@@ -4,7 +4,6 @@ import {
   Position,
   NodeProps,
   Node,
-  useStore,
   useReactFlow,
   NodeResizer,
 } from "@xyflow/react";
@@ -46,9 +45,7 @@ const CustomNode = memo(
     const isOperator = data.type === "operator";
     // Number of current connections plus one empty slot for new connections
     const numHandles = (data.inputs?.length || 0) + 1;
-    const { setNodes, setEdges, getNodes, getEdges } = useReactFlow();
-    const [isHoveringAge, setIsHoveringAge] = useState(false);
-    const [isDraggingAge, setIsDraggingAge] = useState(false);
+    const { setNodes, setEdges, getNodes } = useReactFlow();
     const dropdownRef = useRef<HTMLDivElement>(null);
     const [isCalculating, setIsCalculating] = useState(false);
 
@@ -169,6 +166,7 @@ const CustomNode = memo(
       data.value,
       data.inputs,
       data.calculateResult,
+      data.operatorResults,
       id,
       setNodes,
     ]);
@@ -190,7 +188,6 @@ const CustomNode = memo(
           const operator =
             OPERATORS[Math.floor(Math.random() * OPERATORS.length)];
           const currentNodes = getNodes();
-          const currentEdges = getEdges();
 
           // Get the position of the current node
           const sourceNode = currentNodes.find((node) => node.id === id);
@@ -255,7 +252,9 @@ const CustomNode = memo(
                   );
                   const sourceNodes = incomingEdges
                     .map((edge) => nodeMap.get(edge.source))
-                    .filter((node): node is Node<any> => node !== undefined);
+                    .filter(
+                      (node): node is Node<CustomNodeData> => node !== undefined
+                    );
 
                   // Get values and collect source IDs
                   const contexts: string[] = [];
@@ -295,16 +294,7 @@ const CustomNode = memo(
           });
         }
       },
-      [
-        id,
-        isOperator,
-        data.type,
-        setNodes,
-        setEdges,
-        getNodes,
-        getEdges,
-        data.timelineValue,
-      ]
+      [getNodes, id, isOperator, setEdges, setNodes, data.type]
     );
 
     // Get color based on age ranges with smoother transitions
@@ -369,50 +359,8 @@ const CustomNode = memo(
       return { r, g, b };
     };
 
-    const handleAgeChange = (xDelta: number) => {
-      if (data.timelineValue === undefined) return;
-
-      // Calculate the actual age change based on drag distance
-      // Use a smaller movement amount to allow for precise control
-      const ageChange = xDelta / 10;
-
-      // Round to the nearest integer
-      const newAge = Math.round(
-        Math.max(0, Math.min(99, data.timelineValue + ageChange))
-      );
-
-      // Only update if the age actually changed
-      if (newAge !== data.timelineValue) {
-        // Update node data directly
-        setNodes((nodes) =>
-          nodes.map((node) => {
-            if (node.id === id) {
-              return {
-                ...node,
-                data: {
-                  ...node.data,
-                  timelineValue: newAge,
-                },
-              };
-            }
-            return node;
-          })
-        );
-
-        // Also call onUpdateAge if provided
-        if (data.onUpdateAge) {
-          data.onUpdateAge(newAge);
-        }
-      }
-    };
-
-    const handleMouseDown = (e: React.MouseEvent) => {
-      e.stopPropagation(); // Prevent node dragging
-      setIsDraggingAge(true);
-    };
-
     // Create an array of positions for the input handles
-    const getHandlePosition = (index: number, total: number) => {
+    const getHandlePosition = (index: number) => {
       const topPadding = 0.1; // 10% padding from top
       const handleSpacing = 0.15; // 15% of node height between handles
       return (topPadding + index * handleSpacing) * 100;
@@ -462,24 +410,6 @@ const CustomNode = memo(
             handle: "!bg-amber-500",
             button: "bg-amber-100 hover:bg-amber-200 text-amber-700",
           };
-    };
-
-    const handleOperatorChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-      const newOperator = e.target.value;
-      setNodes((nodes) =>
-        nodes.map((node) => {
-          if (node.id === id) {
-            return {
-              ...node,
-              data: {
-                ...node.data,
-                value: newOperator,
-              },
-            };
-          }
-          return node;
-        })
-      );
     };
 
     const colors = getColorScheme();
@@ -590,7 +520,7 @@ const CustomNode = memo(
                 style={{
                   width: "8px",
                   height: "8px",
-                  top: `${getHandlePosition(i, numHandles)}%`,
+                  top: `${getHandlePosition(i)}%`,
                 }}
               />
             ))}
@@ -687,7 +617,7 @@ const CustomNode = memo(
                   >
                     {OPERATORS.map((op) => {
                       // Get background color based on operator type
-                      let bgColor =
+                      const bgColor =
                         op === "+" // Benefit
                           ? "#F0FFF4" // emerald-50
                           : op === "-" // Detriment
@@ -697,7 +627,7 @@ const CustomNode = memo(
                           : "#FFFBEB"; // amber-50 (Lucky)
 
                       // Get text/border color based on operator type
-                      let textColor =
+                      const textColor =
                         op === "+" // Benefit
                           ? "#C6F6D5" // emerald-200 (border color)
                           : op === "-" // Detriment
