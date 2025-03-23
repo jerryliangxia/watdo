@@ -15,6 +15,7 @@ export interface CustomNodeData extends Record<string, unknown> {
   inputs?: number[];
   sourceIds?: string[]; // Array of source node IDs
   history?: string[]; // Changed from number[] to string[] to store IDs
+  timelineValue?: number;
 }
 
 const OPERATORS = ["+", "-", "*", "%"];
@@ -97,9 +98,14 @@ const CustomNode = memo(
       <div
         className={`relative px-4 py-2 shadow-lg rounded-md border-2 min-w-[80px] min-h-[80px] text-center ${colors.bg} ${colors.border}`}
       >
-        {/* Node ID display */}
-        <div className="absolute -top-2 -right-2 text-[10px] px-1 rounded bg-gray-700 text-white opacity-75">
-          #{id}
+        {/* Node ID and Timeline value display */}
+        <div className="absolute -top-2 -right-2 flex gap-1">
+          <div className="text-[10px] px-1 rounded bg-gray-700 text-white opacity-75">
+            {data.timelineValue ?? 0}
+          </div>
+          <div className="text-[10px] px-1 rounded bg-gray-700 text-white opacity-75">
+            #{id}
+          </div>
         </div>
 
         {/* Input handles for operators */}

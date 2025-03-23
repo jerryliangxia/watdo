@@ -13,10 +13,12 @@ import {
   Edge,
   Node,
   NodeTypes,
+  NodeChange,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import CustomNode from "@/components/CustomNode";
 import ConnectionLine from "@/components/ConnectionLine";
+import Timeline from "@/components/Timeline";
 
 type NodeData = {
   type: "operator" | "value";
@@ -25,6 +27,7 @@ type NodeData = {
   inputs?: number[];
   sourceIds?: string[];
   history?: string[];
+  timelineValue?: number;
   [key: string]: unknown;
 };
 
@@ -138,6 +141,37 @@ function Flow() {
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
   const { screenToFlowPosition } = useReactFlow();
 
+  // Add function to calculate timeline value from x position
+  const getTimelineValue = (xPos: number) => {
+    const viewport = document.querySelector(".react-flow__viewport");
+    if (!viewport) return 20;
+
+    const viewportWidth = viewport.clientWidth;
+    // Scale down by dividing by 20 to create larger gaps (5 units per value)
+    const value = ((xPos / viewportWidth) * 100) / 20;
+    // Shift the range from 0-4 to 20-24
+    return Math.max(20, Math.min(24, Math.round(value) + 20));
+  };
+
+  // Modify onNodesChange to update timeline values
+  const onNodesChangeWithTimeline = (changes: NodeChange<Node<NodeData>>[]) => {
+    onNodesChange(changes);
+
+    // Update timeline values for moved nodes
+    setNodes((nds) =>
+      nds.map((node) => {
+        const timelineValue = getTimelineValue(node.position.x);
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            timelineValue,
+          },
+        };
+      })
+    );
+  };
+
   // Calculate results when edges change
   const onEdgesChangeWithCalculation = useCallback(
     (changes: any) => {
@@ -221,7 +255,7 @@ function Flow() {
       <ReactFlow
         nodes={nodes}
         edges={edges}
-        onNodesChange={onNodesChange}
+        onNodesChange={onNodesChangeWithTimeline}
         onEdgesChange={onEdgesChangeWithCalculation}
         onConnect={onConnect}
         onConnectEnd={onConnectEnd}
@@ -231,6 +265,7 @@ function Flow() {
         fitViewOptions={{ padding: 2 }}
       >
         <Background />
+        {/* <Timeline min={0} max={100} /> */}
       </ReactFlow>
     </div>
   );
