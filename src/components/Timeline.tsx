@@ -86,7 +86,7 @@ const Timeline = memo(
             key={`tick-${pos}`}
             className={`absolute bottom-0 ${
               isMajorTick ? "h-6 border-l-2" : "h-5 border-l"
-            } border-gray-500`}
+            } border-white`}
             style={{
               left: `${viewportPos}px`,
               transform: "translateX(-50%)",
@@ -94,7 +94,7 @@ const Timeline = memo(
           >
             {pos % 10 === 0 && (
               <span
-                className="absolute text-xs font-bold text-gray-700"
+                className="absolute text-xs font-bold text-white timeline-tick"
                 style={{ bottom: "25px", transform: "translateX(-50%)" }}
               >
                 {pos}
@@ -119,14 +119,14 @@ const Timeline = memo(
         ticks.push(
           <div
             key={`secondary-tick-${pos}`}
-            className="absolute bottom-0 h-4 border-l border-gray-400"
+            className="absolute bottom-0 h-4 border-l border-white border-opacity-70"
             style={{
               left: `${viewportPos}px`,
               transform: "translateX(-50%)",
             }}
           >
             <span
-              className="absolute text-[9px] font-medium text-gray-500"
+              className="absolute text-[9px] font-medium text-white text-opacity-80 timeline-tick"
               style={{ bottom: "16px", transform: "translateX(-50%)" }}
             >
               {pos}
@@ -165,7 +165,7 @@ const Timeline = memo(
         ticks.push(
           <div
             key={`minor-tick-${pos}`}
-            className="absolute bottom-0 h-1.5 border-l border-gray-300"
+            className="absolute bottom-0 h-1.5 border-l border-white border-opacity-50"
             style={{
               left: `${viewportPos}px`,
               transform: "translateX(-50%)",
@@ -173,7 +173,7 @@ const Timeline = memo(
           >
             {showMinorValues && (
               <span
-                className="absolute text-[8px] font-light text-gray-400"
+                className="absolute text-[8px] font-light text-white text-opacity-60 timeline-tick"
                 style={{ bottom: "6px", transform: "translateX(-50%)" }}
               >
                 {pos}
@@ -253,55 +253,43 @@ const Timeline = memo(
       if (!isDragging) return;
 
       const dx = e.clientX - dragStartX;
-      // Adjust the panning speed to be smoother with the scaling factor
-      const panSpeed = 1.0; // Lower value makes panning less sensitive
-      const newX = initialTransformX + dx * panSpeed;
-
-      // Update the React Flow viewport x position
-      setViewport({ x: newX, y, zoom });
-      e.preventDefault();
+      setViewport({ x: initialTransformX + dx, y, zoom });
     };
 
     const handleMouseUp = () => {
       setIsDragging(false);
     };
 
-    // Ensure we clean up event listeners
+    // Clean up event listeners when unmounting or when dragging ends
     useEffect(() => {
       const cleanup = () => {
         setIsDragging(false);
       };
 
-      window.addEventListener("mouseup", cleanup);
-      return () => {
-        window.removeEventListener("mouseup", cleanup);
-      };
-    }, []);
+      if (isDragging) {
+        window.addEventListener("mouseup", cleanup);
+        return () => {
+          window.removeEventListener("mouseup", cleanup);
+        };
+      }
+    }, [isDragging]);
 
     return (
       <div
         ref={timelineRef}
-        className={`fixed bottom-0 left-0 w-full bg-white border-t border-gray-200 overflow-hidden select-none z-10 ${className}`}
-        style={{ height: `${height}px` }}
+        className={`absolute bottom-0 left-0 right-0 overflow-hidden ${className}`}
+        style={{
+          height: `${height}px`,
+          backgroundColor: "transparent",
+          cursor: isDragging ? "grabbing" : "grab",
+        }}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
       >
-        <div className="relative w-full h-full">
-          <div className="absolute top-2 left-4 text-sm font-medium text-gray-700">
-            Timeline (Age 20-80) | Zoom: {zoom.toFixed(1)}x
-          </div>
-
-          <div className="w-full h-full pt-10">
-            {generateTicks()}
-            {generateNodeMarkers()}
-          </div>
-
-          {/* Drag indicator */}
-          <div className="absolute top-2 right-4 text-xs text-gray-500">
-            {isDragging ? "Panning..." : "Drag to pan"}
-          </div>
-        </div>
+        {/* Timeline ticks */}
+        {generateTicks()}
+        {generateNodeMarkers()}
       </div>
     );
   }
