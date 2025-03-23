@@ -14,6 +14,7 @@ import {
   Node,
   NodeTypes,
   NodeChange,
+  EdgeChange,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import CustomNode from "@/components/CustomNode";
@@ -288,7 +289,7 @@ function Flow() {
   const [nodes, setNodes, onNodesChange] =
     useNodesState<Node<NodeData>>(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
-  const { screenToFlowPosition, getViewport } = useReactFlow();
+  const { screenToFlowPosition, getViewport, getEdges } = useReactFlow();
 
   // Add function to calculate timeline value from x position
   const getTimelineValue = useCallback((xPos: number) => {
@@ -384,15 +385,20 @@ function Flow() {
             model: "command",
             prompt: `Based on this situation: "${context}"
 ${ageContext ? ageContext + "\n" : ""}
-Generate 3 brief next actions (max 15 words each) that are appropriate for someone of this age.
+Generate 3 distinct next actions (max 15 words each) that are appropriate for someone of this age:
+
+1. A HISTORICAL action that follows traditional approaches or is rooted in established methods.
+2. A PROGRESSIVE action that embraces innovation, technology, or forward-thinking approaches.
+3. A CHAOTIC/RANDOM action that is unexpected, creative, or takes an unusual direction.
+
 Return them in this exact JSON format, with no other text:
 [
-  "First brief action",
-  "Second brief action",
-  "Third brief action"
+  "Historical action - traditional approach",
+  "Progressive action - innovative approach",
+  "Chaotic action - unexpected approach"
 ]`,
             max_tokens: 200,
-            temperature: 0.7,
+            temperature: 0.8,
           }),
         });
 
@@ -625,16 +631,21 @@ Return them in this exact JSON format, with no other text:
             model: "command",
             prompt: `Given this future situation: "${context}"
 ${ageContext ? ageContext + "\n" : ""}
-Generate 3 specific prerequisite actions that would need to be taken BEFORE this situation to make it happen (max 15 words each).
-These should be appropriate for someone of this age.
+Generate 3 distinct prerequisite actions that would need to be taken BEFORE this situation (max 15 words each).
+These should be appropriate for someone of this age:
+
+1. A HISTORICAL prerequisite action that follows traditional approaches or established methods.
+2. A PROGRESSIVE prerequisite action that embraces innovation, technology, or forward-thinking approaches.
+3. A CHAOTIC/RANDOM prerequisite action that is unexpected, creative, or takes an unusual direction.
+
 Return them in this exact JSON format, with no other text:
 [
-  "First prerequisite action needed before this situation",
-  "Second prerequisite action needed before this situation",
-  "Third prerequisite action needed before this situation"
+  "Historical prerequisite - traditional approach",
+  "Progressive prerequisite - innovative approach",
+  "Chaotic prerequisite - unexpected approach"
 ]`,
             max_tokens: 200,
-            temperature: 0.7,
+            temperature: 0.8,
           }),
         });
 
@@ -1016,20 +1027,48 @@ Return only the text of the action, with no quotes or extra formatting.`,
 
   // Calculate results when edges change
   const onEdgesChangeWithCalculation = useCallback(
-    async (changes: any) => {
+    async (changes: EdgeChange[]) => {
+      // Get the edges that are being added or removed
+      const edgeAdditions = changes
+        .filter(
+          (change): change is { type: "add"; item: Edge } =>
+            change.type === "add"
+        )
+        .map((change) => change.item);
+
+      const edgeRemovals = changes
+        .filter(
+          (change): change is { type: "remove"; id: string } =>
+            change.type === "remove"
+        )
+        .map((change) => change.id);
+
+      // Apply changes first
       onEdgesChange(changes);
 
-      // Find operator nodes that need recalculation
-      const operatorNodes = nodes.filter(
+      // Get updated edges after changes
+      const updatedEdges = getEdges();
+
+      // Find only operator nodes affected by the changes
+      const affectedOperatorNodes = nodes.filter(
         (node) =>
           node.data.type === "operator" &&
-          edges.some((edge) => edge.target === node.id)
+          // Node is a target of a newly added edge
+          (edgeAdditions.some((edge: Edge) => edge.target === node.id) ||
+            // Node had an edge removed
+            edgeRemovals.some((edgeId: string) => {
+              const edge = edges.find((e) => e.id === edgeId);
+              return edge && edge.target === node.id;
+            }))
       );
 
-      // Set loading state for all operator nodes that will be processed
+      // If no affected nodes, we're done
+      if (affectedOperatorNodes.length === 0) return;
+
+      // Set loading state only for affected operator nodes
       setNodes((nds) =>
         nds.map((n) =>
-          operatorNodes.some((op) => op.id === n.id)
+          affectedOperatorNodes.some((op) => op.id === n.id)
             ? {
                 ...n,
                 data: {
@@ -1041,19 +1080,19 @@ Return only the text of the action, with no quotes or extra formatting.`,
         )
       );
 
-      // Process each operator node sequentially
+      // Process only the affected operator nodes sequentially
       let currentNodes = nodes;
-      for (const operatorNode of operatorNodes) {
+      for (const operatorNode of affectedOperatorNodes) {
         currentNodes = await processNodeCalculations(
           currentNodes,
-          edges,
+          updatedEdges,
           operatorNode,
           generateOptions
         );
         setNodes(currentNodes);
       }
     },
-    [edges, nodes, onEdgesChange]
+    [edges, nodes, onEdgesChange, getEdges]
   );
 
   const onConnect = useCallback(
@@ -1255,7 +1294,7 @@ Return only the text of the action, with no quotes or extra formatting.`,
         fitView
       >
         <Background color="#fff" gap={20} style={{ zIndex: 0, opacity: 0.5 }} />
-        <Timeline height={70} spacingFactor={1.5} />
+        {/* <Timeline height={70} spacingFactor={1.5} /> */}
         {contextMenu && (
           <ContextMenu
             x={contextMenu.x}

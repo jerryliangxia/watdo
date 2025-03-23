@@ -546,7 +546,7 @@ const CustomNode = memo(
         )}
 
         {/* Age Badge */}
-        <div
+        {/* <div
           className="absolute top-0 right-0 transform translate-x-1/2 -translate-y-1/2 rounded-full flex items-center justify-center font-bold text-xs z-30 cursor-pointer transition-all duration-200"
           style={{
             backgroundColor: getUrgencyColor(),
@@ -567,14 +567,14 @@ const CustomNode = memo(
           }}
         >
           {isHoveringAge ? `Age: ${age}` : age}
-        </div>
+        </div> */}
 
         {/* Tooltip for dragging instructions */}
-        {isHoveringAge && !isDraggingAge && (
+        {/* {isHoveringAge && !isDraggingAge && (
           <div className="absolute top-6 right-0 transform translate-x-1/2 bg-gray-800 text-white px-2 py-1 rounded text-xs z-40 whitespace-nowrap">
             Drag node to adjust age
           </div>
-        )}
+        )} */}
 
         {/* Input handles for operators */}
         {isOperator && (
