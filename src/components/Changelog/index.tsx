@@ -4,12 +4,19 @@ import { Drawer } from "vaul";
 import styles from "../../styles/components/components.module.css";
 import Graph from "./Graph";
 
+// Define extended props type that includes the direction property
+interface ExtendedDrawerRootProps {
+  shouldScaleBackground: boolean;
+  direction: "right" | "left" | "top" | "bottom";
+  children: React.ReactNode;
+}
+
 export default function Changelog() {
   return (
     <Drawer.Root
       shouldScaleBackground={false}
       direction="right"
-      // @ts-ignore - direction prop is supported in the latest version
+      {...({} as Partial<ExtendedDrawerRootProps>)}
     >
       <Drawer.Trigger asChild>
         <div className="link" data-trigger="changelog">

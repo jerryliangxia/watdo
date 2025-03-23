@@ -3,19 +3,9 @@
 import { useEffect, useState } from "react";
 import styles from "../../styles/components/graph.module.css";
 import Tooltip from "./Tooltip";
-import { useWindupString, WindupChildren, Pace, Pause } from "windups";
+import { WindupChildren, Pace, Pause } from "windups";
 import logbook from "./logbook.json";
 import Link from "next/link";
-
-interface CommitDay {
-  date: string;
-  count: number;
-}
-
-interface MonthGroup {
-  month: string;
-  days: CommitDay[];
-}
 
 interface LogEntry {
   id: number;
@@ -123,10 +113,9 @@ const parseText = (text: string) => {
 
 export default function Graph() {
   const [hourlyCommits, setHourlyCommits] = useState<DisplayDate[]>([]);
-  const [daysSinceLaunch, setDaysSinceLaunch] = useState<number>(2);
+  const [daysSinceLaunch] = useState<number>(2);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [currentEntry, setCurrentEntry] = useState<string>("");
+  const [error] = useState<string | null>(null);
   const [entries, setEntries] = useState<LogEntry[]>([]);
 
   // Format hour to display AM/PM
@@ -147,13 +136,6 @@ export default function Graph() {
   useEffect(() => {
     const sortedEntries = [...logbook.entries].sort((a, b) => b.id - a.id);
     setEntries(sortedEntries);
-  }, []);
-
-  useEffect(() => {
-    const latestEntry = logbook.entries[logbook.entries.length - 1];
-    if (latestEntry) {
-      setCurrentEntry(latestEntry.text);
-    }
   }, []);
 
   const getIntensityClass = (count: number) => {
