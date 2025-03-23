@@ -1,5 +1,12 @@
 import { memo } from "react";
-import { Handle, Position, NodeProps, Node, useStore } from "@xyflow/react";
+import {
+  Handle,
+  Position,
+  NodeProps,
+  Node,
+  useStore,
+  useReactFlow,
+} from "@xyflow/react";
 
 export interface CustomNodeData extends Record<string, unknown> {
   type: "operator" | "value";
@@ -10,11 +17,14 @@ export interface CustomNodeData extends Record<string, unknown> {
   history?: string[]; // Changed from number[] to string[] to store IDs
 }
 
+const OPERATORS = ["+", "-", "*", "%"];
+
 const CustomNode = memo(
   ({ id, data, isConnectable }: NodeProps<Node<CustomNodeData>>) => {
     const isOperator = data.type === "operator";
     // Number of current connections plus one empty slot for new connections
     const numHandles = (data.inputs?.length || 0) + 1;
+    const { setNodes } = useReactFlow();
 
     // Create an array of positions for the input handles
     const getHandlePosition = (index: number, total: number) => {
@@ -41,12 +51,44 @@ const CustomNode = memo(
             text: "text-emerald-700",
             handle: "!bg-emerald-500",
           }
-        : {
+        : data.value === "-"
+        ? {
             bg: "bg-rose-50",
             border: "border-rose-200",
             text: "text-rose-700",
             handle: "!bg-rose-500",
+          }
+        : data.value === "*"
+        ? {
+            bg: "bg-purple-50",
+            border: "border-purple-200",
+            text: "text-purple-700",
+            handle: "!bg-purple-500",
+          }
+        : {
+            bg: "bg-amber-50",
+            border: "border-amber-200",
+            text: "text-amber-700",
+            handle: "!bg-amber-500",
           };
+    };
+
+    const handleOperatorChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+      const newOperator = e.target.value;
+      setNodes((nodes) =>
+        nodes.map((node) => {
+          if (node.id === id) {
+            return {
+              ...node,
+              data: {
+                ...node.data,
+                value: newOperator,
+              },
+            };
+          }
+          return node;
+        })
+      );
     };
 
     const colors = getColorScheme();
@@ -94,7 +136,17 @@ const CustomNode = memo(
         <div className={`font-medium ${colors.text}`}>
           {isOperator ? (
             <div className="flex flex-col items-center gap-1">
-              <div className="text-lg">{data.value}</div>
+              <select
+                value={data.value as string}
+                onChange={handleOperatorChange}
+                className={`text-lg bg-transparent border-none cursor-pointer focus:outline-none ${colors.text}`}
+              >
+                {OPERATORS.map((op) => (
+                  <option key={op} value={op}>
+                    {op}
+                  </option>
+                ))}
+              </select>
               {data.inputs && data.inputs.length > 0 && (
                 <div className="text-sm opacity-75">
                   {data.inputs.join(` ${data.value} `)}

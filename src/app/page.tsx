@@ -49,22 +49,22 @@ const initialEdges: Edge[] = [];
 let id = 1;
 const getId = () => `${id++}`;
 
-function getRandomNodeData(): NodeData {
-  const isOperator = Math.random() > 0.5;
-  return {
-    type: isOperator ? "operator" : "value",
-    value: isOperator
-      ? ["+", "-"][Math.floor(Math.random() * 2)]
-      : Math.floor(Math.random() * 4) + 1,
-  };
-}
-
 function calculateResult(operator: string, values: number[]): number {
   if (values.length < 2) return 0;
-  if (operator === "+") {
-    return values.reduce((a, b) => a + b, 0);
+
+  switch (operator) {
+    case "+":
+      return values.reduce((a, b) => a + b, 0);
+    case "-":
+      return values.reduce((a, b) => a - b);
+    case "*":
+      return values.reduce((a, b) => a * b, 1);
+    case "%":
+      // For modulo, we only use the first two values
+      return values[0] % values[1];
+    default:
+      return 0;
   }
-  return values.reduce((a, b) => a - b);
 }
 
 function calculateNodeResults(nodes: Node<NodeData>[], edges: Edge[]) {
@@ -118,6 +118,17 @@ function calculateNodeResults(nodes: Node<NodeData>[], edges: Edge[]) {
     }
     return node;
   });
+}
+
+function getRandomNodeData(): NodeData {
+  const isOperator = Math.random() > 0.5;
+  const operators = ["+", "-", "*", "%"];
+  return {
+    type: isOperator ? "operator" : "value",
+    value: isOperator
+      ? operators[Math.floor(Math.random() * operators.length)]
+      : Math.floor(Math.random() * 4) + 1,
+  };
 }
 
 function Flow() {
