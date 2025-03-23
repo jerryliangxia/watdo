@@ -1,0 +1,157 @@
+.graphWrapper {
+  width: 100%;
+  font-family: monospace;
+  color: #dedede;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 1rem;
+  position: relative;
+}
+
+.monthLabel {
+  font-weight: bold;
+  font-size: 1.25rem;
+  margin-right: auto;
+}
+
+.startDate {
+  position: absolute;
+  right: 0;
+  font-size: 12px;
+  color: #dedede;
+  background: #333;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.graphContainer {
+  margin-bottom: 2rem;
+  overflow-x: auto;
+}
+
+.monthGroup {
+  margin-bottom: 1rem;
+}
+
+.monthDays {
+  display: flex;
+  gap: 4px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  padding-bottom: 10px;
+}
+
+.commitColumn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 32px;
+}
+
+.commitWrapper {
+  height: 24px;
+  display: flex;
+  align-items: center;
+}
+
+.commitDay {
+  width: 20px;
+  height: 20px;
+  border-radius: 2px;
+  transition: all 0.2s ease;
+}
+
+.intensityNone {
+  background-color: #1e1e1e;
+}
+
+.intensityLow {
+  background-color: #0e4429;
+}
+
+.intensityMedium {
+  background-color: #006d32;
+}
+
+.intensityHigh {
+  background-color: #26a641;
+}
+
+.redacted {
+  position: relative;
+}
+
+.redacted:after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgba(0, 0, 0, 0.1),
+    rgba(0, 0, 0, 0.1) 10px,
+    rgba(0, 0, 0, 0.2) 10px,
+    rgba(0, 0, 0, 0.2) 20px
+  );
+}
+
+.dateLabel {
+  font-size: 10px;
+  color: #777;
+  white-space: nowrap;
+}
+
+.tooltipContent {
+  background-color: #000;
+  color: #fff;
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 12px;
+  z-index: 100;
+}
+
+.logEntries {
+  border-top: 1px solid #333;
+  padding-top: 1.5rem;
+}
+
+.logEntry {
+  margin-bottom: 1.5rem;
+}
+
+.logDate {
+  display: inline-block;
+  background: #333;
+  color: #888;
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-right: 8px;
+  font-size: 12px;
+}
+
+.logText,
+.typingText {
+  display: inline;
+  line-height: 1.5;
+}
+
+.link {
+  color: #58a6ff;
+  text-decoration: underline;
+  transition: color 0.2s ease;
+}
+
+.link:hover {
+  color: #79c0ff;
+}
+
+.underline {
+  text-decoration: underline;
+  text-decoration-style: dotted;
+}

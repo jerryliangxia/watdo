@@ -9,10 +9,13 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@radix-ui/react-tooltip": "^1.1.8",
     "@xyflow/react": "^12.4.4",
     "next": "15.2.3",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "vaul": "^1.1.2",
+    "windups": "^1.2.2"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",

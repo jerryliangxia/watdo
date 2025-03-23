@@ -1,0 +1,99 @@
+{
+  "entries": [
+    {
+      "id": 1,
+      "date": "2025-03-22",
+      "text": "Initial commit. Project setup with Next.js 15.2.3 and Turbopack."
+    },
+    {
+      "id": 2,
+      "date": "2025-03-22",
+      "text": "Added custom timeline component for visualizing deadlines and project milestones."
+    },
+    {
+      "id": 3,
+      "date": "2025-03-22",
+      "text": "Implemented draggable nodes with customizable fields using @xyflow/react."
+    },
+    {
+      "id": 4,
+      "date": "2025-03-22",
+      "text": "Added custom connection lines between nodes for better visual hierarchy."
+    },
+    {
+      "id": 5,
+      "date": "2025-03-22",
+      "text": "Fixed bug with node drag behavior when connecting multiple inputs."
+    },
+    {
+      "id": 6,
+      "date": "2025-03-22",
+      "text": "Improved node styling with hover states and better visual feedback."
+    },
+    {
+      "id": 7,
+      "date": "2025-03-22",
+      "text": "Added context menu component for quick actions on nodes."
+    },
+    {
+      "id": 8,
+      "date": "2025-03-23",
+      "text": "Fixed performance issues when rendering large node graphs."
+    },
+    {
+      "id": 9,
+      "date": "2025-03-23",
+      "text": "Added loading spinner component for async operations."
+    },
+    {
+      "id": 10,
+      "date": "2025-03-23",
+      "text": "Implemented life simulator component for tracking progress visualization."
+    },
+    {
+      "id": 11,
+      "date": "2025-03-23",
+      "text": "Added [[https://github.com/emilkowalski/vaul|Vaul]] drawer component for the changelog."
+    },
+    {
+      "id": 12,
+      "date": "2025-03-23",
+      "text": "Fixed accessibility issues with drawer component by adding proper ARIA attributes."
+    },
+    {
+      "id": 13,
+      "date": "2025-03-23",
+      "text": "Refactored drawer component to position from right side and take up 30% of screen."
+    },
+    {
+      "id": 14,
+      "date": "2025-03-23",
+      "text": "Improved animations for smoother transitions when opening and closing the changelog."
+    },
+    {
+      "id": 15,
+      "date": "2025-03-23",
+      "text": "Added tooltip component using __@radix-ui/react-tooltip__ for better UX."
+    },
+    {
+      "id": 16,
+      "date": "2025-03-23",
+      "text": "Updated graph component to show contribution history with proper date formatting."
+    },
+    {
+      "id": 17,
+      "date": "2025-03-23",
+      "text": "Fixed text animation with [[https://windups.gwil.co/|windups]] library for typing effect."
+    },
+    {
+      "id": 18,
+      "date": "2025-03-23",
+      "text": "Added compatibility fixes for React 19."
+    },
+    {
+      "id": 19,
+      "date": "2025-03-23",
+      "text": "Final polish: Updated changelog design with new Mar 2025 dates and project-specific log entries."
+    }
+  ]
+}

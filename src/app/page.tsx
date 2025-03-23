@@ -21,6 +21,7 @@ import CustomNode from "@/components/CustomNode";
 import ConnectionLine from "@/components/ConnectionLine";
 import InputNode from "@/components/InputNode";
 import ContextMenu from "@/components/ContextMenu";
+import Changelog from "@/components/Changelog";
 
 type NodeData = {
   type: "operator" | "value" | "input";
@@ -1359,6 +1360,7 @@ export default function Home() {
   return (
     <ReactFlowProvider>
       <Flow />
+      <Changelog />
     </ReactFlowProvider>
   );
 }
