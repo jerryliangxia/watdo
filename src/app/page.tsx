@@ -1080,8 +1080,35 @@ Return only the text of the action, with no quotes or extra formatting.`,
         sourceNode.id
       );
 
+      // Prevent connecting to nodes that are already connected to a parent node
+      // This prevents the "parent of parent" connection issue
+      const isConnectedToCommonAncestor = (() => {
+        // If target isn't an operator, this check doesn't apply
+        if (targetNode.data.type !== "operator") return false;
+
+        // Get all nodes that are connected to the target node
+        const connectedToTarget = nodes.filter((node) =>
+          edges.some(
+            (edge) => edge.target === targetNode.id && edge.source === node.id
+          )
+        );
+
+        // If there are no connected nodes yet, this check doesn't apply
+        if (connectedToTarget.length === 0) return false;
+
+        // Check if any of the nodes connected to the target are also
+        // connected to the source node we're trying to connect
+        return connectedToTarget.some((connectedNode) =>
+          edges.some(
+            (edge) =>
+              edge.target === connectedNode.id && edge.source === sourceNode.id
+          )
+        );
+      })();
+
       const isValidConnection =
         !isDuplicateConnection &&
+        !isConnectedToCommonAncestor &&
         (targetNode.data.type === "operator" ||
           (sourceNode.data.type === "operator" &&
             targetNode.data.type === "value"));

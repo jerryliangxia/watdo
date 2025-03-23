@@ -7,6 +7,7 @@ import {
   useStore,
   useReactFlow,
   NodeResizer,
+  Edge,
 } from "@xyflow/react";
 import LoadingSpinner from "./LoadingSpinner";
 
@@ -213,9 +214,9 @@ const CustomNode = memo(
               type: "operator",
               value: operator,
               timelineValue: sourceNode.data.timelineValue,
-              inputs: [], // Initialize empty inputs array
-              sourceIds: [], // Initialize empty sourceIds array
-              history: [], // Initialize empty history array
+              inputs: [sourceNode.data.value as string], // Initialize with this node's value
+              sourceIds: [sourceNode.id], // Set the source node ID
+              history: [sourceNode.id], // Track the connection history
             },
           };
 
@@ -227,72 +228,13 @@ const CustomNode = memo(
             type: "default",
           };
 
-          // First add the node
-          setNodes((nodes) => {
-            const updatedNodes = [...nodes, newNode];
+          // First add the node and edge
+          setNodes((nodes) => [...nodes, newNode]);
 
-            // Add edge after node is added
-            setTimeout(() => {
-              setEdges((edges) => {
-                const newEdges = [...edges, newEdge];
-
-                // Calculate results with the updated nodes and edges
-                setNodes((latestNodes) => {
-                  // Find the newly added node
-                  const operatorNode = latestNodes.find(
-                    (n) => n.id === newNodeId
-                  );
-                  if (!operatorNode) return latestNodes;
-
-                  // Use the same logic as calculateNodeResults for operator nodes
-                  const nodeMap = new Map(
-                    latestNodes.map((node) => [node.id, node])
-                  );
-
-                  // Find incoming edges for the operator node
-                  const incomingEdges = newEdges.filter(
-                    (edge) => edge.target === newNodeId
-                  );
-                  const sourceNodes = incomingEdges
-                    .map((edge) => nodeMap.get(edge.source))
-                    .filter((node): node is Node<any> => node !== undefined);
-
-                  // Get values and collect source IDs
-                  const contexts: string[] = [];
-                  const sourceIds: string[] = [];
-
-                  sourceNodes.forEach((srcNode) => {
-                    sourceIds.push(srcNode.id);
-                    contexts.push(
-                      typeof srcNode.data.value === "string"
-                        ? srcNode.data.value
-                        : String(srcNode.data.value)
-                    );
-                  });
-
-                  // Update the operator node with inputs and source IDs
-                  return latestNodes.map((n) => {
-                    if (n.id === newNodeId) {
-                      return {
-                        ...n,
-                        data: {
-                          ...n.data,
-                          inputs: contexts,
-                          sourceIds,
-                          history: sourceIds,
-                        },
-                      };
-                    }
-                    return n;
-                  });
-                });
-
-                return newEdges;
-              });
-            }, 10);
-
-            return updatedNodes;
-          });
+          // Add the edge immediately after
+          setTimeout(() => {
+            setEdges((edges) => [...edges, newEdge]);
+          }, 10);
         }
       },
       [
@@ -631,8 +573,9 @@ const CustomNode = memo(
                       })
                     );
                   }}
-                  className="flex items-center justify-between w-full text-sm font-semibold px-3 py-1.5 rounded-md appearance-none cursor-pointer focus:outline-none"
+                  className="flex items-center justify-between text-sm font-semibold px-3 py-1.5 rounded-md appearance-none cursor-pointer focus:outline-none"
                   style={{
+                    width: "140px", // Increased width from 110px to 140px
                     backgroundColor:
                       data.value === "+" // Benefit
                         ? "#F0FFF4" // emerald-50
@@ -661,14 +604,16 @@ const CustomNode = memo(
                         : "#B45309", // amber-700 (Lucky)
                   }}
                 >
-                  <span>{OPERATOR_LABELS[data.value as string]}</span>
+                  <span className="overflow-hidden text-ellipsis whitespace-nowrap">
+                    {OPERATOR_LABELS[data.value as string]}
+                  </span>
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
                     width="14"
                     height="14"
                     viewBox="0 0 24 24"
                     fill="none"
-                    stroke="white"
+                    stroke="currentColor"
                     strokeWidth="2"
                     strokeLinecap="round"
                     strokeLinejoin="round"
@@ -680,8 +625,9 @@ const CustomNode = memo(
                 {data.showOperatorDropdown && (
                   <div
                     ref={dropdownRef}
-                    className="absolute top-full left-0 w-full mt-1 rounded-md shadow-lg overflow-hidden z-50"
+                    className="absolute top-full left-0 mt-1 rounded-md shadow-lg overflow-hidden z-50"
                     style={{
+                      width: "140px", // Increased width from 110px to 140px
                       zIndex: 9999,
                     }}
                   >
@@ -709,7 +655,7 @@ const CustomNode = memo(
                       return (
                         <div
                           key={op}
-                          className="px-3 py-1.5 cursor-pointer text-center"
+                          className="px-3 py-1.5 cursor-pointer text-center whitespace-nowrap overflow-hidden"
                           style={{
                             backgroundColor: bgColor,
                             color:
@@ -722,6 +668,7 @@ const CustomNode = memo(
                                 : "#B45309", // amber-700 (Lucky)
                             borderBottom:
                               op !== "%" ? `1px solid ${textColor}` : "none",
+                            textOverflow: "ellipsis",
                           }}
                           onClick={(e) => {
                             e.stopPropagation();

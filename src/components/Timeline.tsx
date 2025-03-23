@@ -186,61 +186,6 @@ const Timeline = memo(
       return ticks;
     };
 
-    // Highlight the positions of nodes on the timeline
-    const generateNodeMarkers = () => {
-      const nodes = getNodes();
-      const adjustedScalingFactor = TIMELINE_SCALING_FACTOR / spacingFactor;
-
-      return nodes.map((node) => {
-        // Use the timelineValue if available, otherwise use the current x position
-        let nodePosition =
-          node.data?.timelineValue !== undefined
-            ? (node.data.timelineValue as number)
-            : node.position.x / adjustedScalingFactor;
-
-        // Constrain node position to the 0-80 range
-        nodePosition = Math.max(0, Math.min(80, nodePosition));
-
-        // Apply the same scaling factor for node markers to match tick positions
-        const xPos = nodePosition * adjustedScalingFactor * zoom + x;
-
-        // Determine the marker color based on node type
-        const getMarkerColor = () => {
-          if (!node.data?.type) return "bg-blue-500";
-
-          switch (node.data.type) {
-            case "operator":
-              const value = node.data.value as string;
-              if (value === "+") return "bg-emerald-500";
-              if (value === "-") return "bg-rose-500";
-              if (value === "*") return "bg-purple-500";
-              if (value === "%") return "bg-amber-500";
-              return "bg-blue-500";
-            case "input":
-              return "bg-cyan-500";
-            case "value":
-            default:
-              return "bg-blue-500";
-          }
-        };
-
-        const markerColor = getMarkerColor();
-
-        return (
-          <div
-            key={`node-${node.id}`}
-            className={`absolute bottom-0 w-4 h-10 ${markerColor} rounded-t-md shadow-md`}
-            style={{
-              left: `${xPos}px`,
-              transform: "translateX(-50%)",
-              zIndex: 20,
-            }}
-            title={`Node ${node.id} at position ${Math.round(nodePosition)}`}
-          />
-        );
-      });
-    };
-
     // Handle mouse interaction for timeline panning
     const handleMouseDown = (e: React.MouseEvent) => {
       setIsDragging(true);
@@ -289,7 +234,6 @@ const Timeline = memo(
       >
         {/* Timeline ticks */}
         {generateTicks()}
-        {generateNodeMarkers()}
       </div>
     );
   }
