@@ -143,10 +143,16 @@ function Flow() {
 
       if (!targetNode || !sourceNode) return;
 
+      // Check if this source node is already connected (exists in history)
+      const isDuplicateConnection = targetNode.data.history?.includes(
+        sourceNode.id
+      );
+
       const isValidConnection =
-        targetNode.data.type === "operator" ||
-        (sourceNode.data.type === "operator" &&
-          targetNode.data.type === "value");
+        !isDuplicateConnection && // Prevent duplicate connections
+        (targetNode.data.type === "operator" ||
+          (sourceNode.data.type === "operator" &&
+            targetNode.data.type === "value"));
 
       if (isValidConnection) {
         setEdges((eds) => {
