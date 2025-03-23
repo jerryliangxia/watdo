@@ -36,6 +36,7 @@ type NodeData = {
   onGenerateBackward?: (context: string) => Promise<void>;
   onUpdateAge?: (newAge: number) => void;
   onReshuffleContext?: () => Promise<void>;
+  operatorResults?: Record<string, string>;
   [key: string]: unknown;
 };
 
@@ -168,7 +169,14 @@ async function processNodeCalculations(
     contexts
   );
 
-  // Update node with result
+  // Initialize or update operator results
+  const currentOperatorResults = operatorNode.data.operatorResults || {};
+  const updatedOperatorResults = {
+    ...currentOperatorResults,
+    [operatorNode.data.value as string]: result,
+  };
+
+  // Update node with result and add calculateResult function
   return updatedNodes.map((node) =>
     node.id === operatorNode.id
       ? {
@@ -179,8 +187,12 @@ async function processNodeCalculations(
             inputs: contexts,
             sourceIds: sourceNodes.map((n) => n.id),
             isLoading: false,
+            operatorResults: updatedOperatorResults,
             onGenerate: (context: string) =>
               generateOptions(context, operatorNode.id),
+            calculateResult: async (inputs: string[], operatorType: string) => {
+              return calculateContextResult(operatorType, inputs);
+            },
           },
         }
       : node

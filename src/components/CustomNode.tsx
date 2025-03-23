@@ -14,6 +14,7 @@ export interface CustomNodeData extends Record<string, unknown> {
   type: "operator" | "value" | "input";
   value: string | number;
   result?: string;
+  operatorResults?: Record<string, string>;
   inputs?: string[];
   sourceIds?: string[]; // Array of source node IDs
   history?: string[]; // Changed from number[] to string[] to store IDs
@@ -24,6 +25,7 @@ export interface CustomNodeData extends Record<string, unknown> {
   onUpdateAge?: (newAge: number) => void;
   onReshuffleContext?: () => Promise<void>; // Function to reshuffle the node's context
   showOperatorDropdown?: boolean;
+  calculateResult?: (inputs: string[], operatorType: string) => Promise<string>;
 }
 
 // Define operator values and their display names
@@ -48,6 +50,7 @@ const CustomNode = memo(
     const [isHoveringAge, setIsHoveringAge] = useState(false);
     const [isDraggingAge, setIsDraggingAge] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
+    const [isCalculating, setIsCalculating] = useState(false);
 
     // Handle click outside of dropdown
     useEffect(() => {
@@ -78,6 +81,97 @@ const CustomNode = memo(
         document.removeEventListener("mousedown", handleClickOutside);
       };
     }, [id, setNodes]);
+
+    // Effect to recalculate result when operator changes
+    useEffect(() => {
+      if (
+        isOperator &&
+        data.inputs &&
+        Array.isArray(data.inputs) &&
+        data.inputs.length > 0 &&
+        data.calculateResult &&
+        typeof data.value === "string"
+      ) {
+        // Check if we already have a calculated result for this operator
+        const operatorResults = data.operatorResults || {};
+
+        // If we already have a result for this operator type, use it
+        if (operatorResults[data.value]) {
+          // Update the result from the stored results
+          setNodes((nodes) =>
+            nodes.map((node) => {
+              if (node.id === id) {
+                return {
+                  ...node,
+                  data: {
+                    ...node.data,
+                    result: operatorResults[data.value],
+                  },
+                };
+              }
+              return node;
+            })
+          );
+        } else {
+          // Calculate the result for this operator type
+          const calculateNewResult = async () => {
+            setIsCalculating(true);
+
+            try {
+              // Type assertion to guarantee inputs is a string array and value is a string
+              if (
+                Array.isArray(data.inputs) &&
+                typeof data.value === "string"
+              ) {
+                const calculateResult = data.calculateResult as (
+                  inputs: string[],
+                  operatorType: string
+                ) => Promise<string>;
+                const newResult = await calculateResult(
+                  data.inputs,
+                  data.value
+                );
+
+                // Store the result in the operatorResults map and update the current result
+                setNodes((nodes) =>
+                  nodes.map((node) => {
+                    if (node.id === id) {
+                      const updatedOperatorResults = {
+                        ...operatorResults,
+                        [data.value as string]: newResult,
+                      };
+
+                      return {
+                        ...node,
+                        data: {
+                          ...node.data,
+                          result: newResult,
+                          operatorResults: updatedOperatorResults,
+                        },
+                      };
+                    }
+                    return node;
+                  })
+                );
+              }
+            } catch (error) {
+              console.error("Error calculating result:", error);
+            } finally {
+              setIsCalculating(false);
+            }
+          };
+
+          calculateNewResult();
+        }
+      }
+    }, [
+      isOperator,
+      data.value,
+      data.inputs,
+      data.calculateResult,
+      id,
+      setNodes,
+    ]);
 
     // Get the age value from timelineValue (defaults to 22 if not set)
     const age = data.timelineValue || 22;
@@ -403,7 +497,7 @@ const CustomNode = memo(
     return (
       <div
         className={`relative px-4 py-2 min-w-[80px] min-h-[80px] text-center ${
-          data.isLoading ? "animate-pulse" : ""
+          data.isLoading || isCalculating ? "animate-pulse" : ""
         } ${!isOperator && data.type === "value" ? "group" : ""}`}
         style={{
           backgroundColor: isOperator
