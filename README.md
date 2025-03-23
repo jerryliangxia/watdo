@@ -1,4 +1,19 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# WatDo - Graph-based Planning Tool
+
+## Repository
+
+This repository is available on GitHub: [https://github.com/jerryliangxia/watdo](https://github.com/jerryliangxia/watdo)
+
+**Note:** The full repository size is approximately 135MB, which may affect clone times and storage requirements.
+
+WatDo is a web application that helps you visualize and plan tasks using a graph-based approach. It allows you to create nodes representing tasks or ideas and connect them in both forward and backward directions to build comprehensive planning workflows.
+
+## Features
+
+- **Forward and Backward Planning**: Create connections in both directions to build comprehensive planning structures
+- **Time-based Visualization**: Nodes are positioned on a timeline, allowing you to organize tasks by age/time
+- **Interactive Graph Editor**: Easily add, connect, and modify nodes in a flexible flow-based interface
+- **Dynamic Generation**: Generate new planning branches based on your inputs
 
 ## Getting Started
 
