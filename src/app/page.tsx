@@ -15,16 +15,20 @@ import {
   NodeTypes,
   NodeChange,
   EdgeChange,
+  OnConnectStartParams,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import CustomNode from "@/components/CustomNode";
 import ConnectionLine from "@/components/ConnectionLine";
 import InputNode from "@/components/InputNode";
 import ContextMenu from "@/components/ContextMenu";
+import MilestoneNode from "@/components/MilestoneNode";
+import { toast } from "react-hot-toast";
 import Changelog from "@/components/Changelog";
+import React from "react";
 
 type NodeData = {
-  type: "operator" | "value" | "input";
+  type: "operator" | "value" | "input" | "milestone";
   value: string | number;
   result?: string;
   inputs?: string[];
@@ -38,12 +42,18 @@ type NodeData = {
   onUpdateAge?: (newAge: number) => void;
   onReshuffleContext?: () => Promise<void>;
   operatorResults?: Record<string, string>;
+  milestones?: string[];
+  startGoal?: string;
+  endGoal?: string;
+  onGenerateMilestones?: (startGoal: string, endGoal: string) => Promise<void>;
+  backwardConnectionAttempted?: boolean;
   [key: string]: unknown;
 };
 
 const nodeTypes: NodeTypes = {
   custom: CustomNode,
   input: InputNode,
+  milestone: MilestoneNode,
 };
 
 const initialNodes: Node<NodeData>[] = [
@@ -309,6 +319,16 @@ function Flow() {
     x: number;
     y: number;
     flowPosition: { x: number; y: number };
+  } | null>(null);
+
+  // Add this state variable for tracking selected node
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+
+  // Add this state variable for tracking connecting node information
+  const [connectingNodeId, setConnectingNodeId] = useState<{
+    sourceId: string;
+    sourceHandle: string;
+    targetId?: string;
   } | null>(null);
 
   // First declare reshuffleContext function
@@ -677,7 +697,7 @@ Return them in this exact JSON format, with no other text:
     [setNodes, getTimelineValue, setEdges, reshuffleContext]
   );
 
-  // Add backward planning function
+  // Fixed generateBackwardOptions function that properly handles backward branching
   const generateBackwardOptions = useCallback(
     async (context: string, nodeId: string) => {
       if (!process.env.NEXT_PUBLIC_COHERE_API_KEY) {
@@ -686,30 +706,24 @@ Return them in this exact JSON format, with no other text:
       }
 
       try {
-        // Get node info and set loading state in a single operation
-        const nodeInfo = await new Promise<{ sourceNode: Node<NodeData> }>(
-          (resolve, reject) => {
-            setNodes((currentNodes) => {
-              const sourceNode = currentNodes.find((n) => n.id === nodeId);
-              if (!sourceNode) {
-                reject(new Error("Source node not found"));
-                return currentNodes; // Return unchanged state
-              }
-
-              // Mark as loading and capture node info
-              resolve({ sourceNode });
-
-              // Set loading state
-              return currentNodes.map((n) =>
-                n.id === nodeId
-                  ? { ...n, data: { ...n.data, generatingOptions: true } }
-                  : n
-              );
-            });
-          }
+        // Mark node as generating options
+        setNodes((nds) =>
+          nds.map((n) =>
+            n.id === nodeId
+              ? {
+                  ...n,
+                  data: {
+                    ...n.data,
+                    generatingOptions: true,
+                  },
+                }
+              : n
+          )
         );
 
-        const { sourceNode } = nodeInfo;
+        // Get the source node
+        const sourceNode = nodes.find((n) => n.id === nodeId);
+        if (!sourceNode) return;
 
         // Get the age value to determine context
         const age = sourceNode.data.timelineValue || 22;
@@ -717,7 +731,6 @@ Return them in this exact JSON format, with no other text:
 
         // Customize prompt based on age
         let ageContext = "";
-
         if (normalizedAge < 30) {
           ageContext =
             "You are in your 20s. You have plenty of time for long-term planning.";
@@ -741,6 +754,7 @@ Return them in this exact JSON format, with no other text:
             "You are in your 80s or older. You should focus on health, family and legacy.";
         }
 
+        // Generate backward options
         const response = await fetch("https://api.cohere.ai/v1/generate", {
           method: "POST",
           headers: {
@@ -770,11 +784,8 @@ Return them in this exact JSON format, with no other text:
         });
 
         if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
           throw new Error(
-            `Failed to generate backward options: ${response.status} ${
-              response.statusText
-            }${errorData.message ? ` - ${errorData.message}` : ""}`
+            `Failed to generate backward options: ${response.status}`
           );
         }
 
@@ -784,6 +795,7 @@ Return them in this exact JSON format, with no other text:
           throw new Error("Invalid response format from Cohere API");
         }
 
+        // Parse the options from the response
         let options;
         try {
           // Clean and prepare the text for JSON parsing
@@ -806,12 +818,7 @@ Return them in this exact JSON format, with no other text:
 
           options = JSON.parse(cleanText);
         } catch (parseError) {
-          console.error(
-            "Failed to parse options:",
-            parseError,
-            "Raw text:",
-            data.generations[0].text
-          );
+          console.error("Failed to parse options:", parseError);
           throw new Error("Invalid JSON format in API response");
         }
 
@@ -819,14 +826,10 @@ Return them in this exact JSON format, with no other text:
           throw new Error("Invalid options format from Cohere API");
         }
 
-        // Create new nodes using the latest nodes state
+        // Create new nodes for the backward options - positioned to the LEFT of the input node
         setNodes((currentNodes) => {
-          // Get the latest version of the source node
           const latestSourceNode = currentNodes.find((n) => n.id === nodeId);
-          if (!latestSourceNode) {
-            console.error("Source node disappeared during processing");
-            return currentNodes;
-          }
+          if (!latestSourceNode) return currentNodes;
 
           // Create new nodes for each option - placed to the LEFT of the input node
           const newNodes: Node<NodeData>[] = options.map(
@@ -834,15 +837,14 @@ Return them in this exact JSON format, with no other text:
               const id = getId();
 
               // Base distance from input node
-              const distance = 500; // Horizontal distance to the left (increased from 350px to 500px)
+              const distance = 500; // Horizontal distance to the left
 
               // For horizontal spacing, use a simple pattern:
               // Place all nodes at the same distance to the left
               const xPos = latestSourceNode.position.x - distance;
 
               // Calculate vertical position with more spacing between nodes
-              // Increase spacing from 75px to 150px for better visual separation
-              const spacing = 150; // increased from 75px to 150px
+              const spacing = 150; // Increased for better separation
               const totalHeight = spacing * (options.length - 1);
               const startY = latestSourceNode.position.y - totalHeight / 2;
               const yPos = startY + index * spacing;
@@ -903,7 +905,7 @@ Return them in this exact JSON format, with no other text:
         console.error("Error generating backward options:", error);
       }
     },
-    [setNodes, getTimelineValue, setEdges, reshuffleContext]
+    [nodes, setNodes, setEdges, reshuffleContext]
   );
 
   // Handle manual age updates from dragging the age badge
@@ -929,8 +931,24 @@ Return them in this exact JSON format, with no other text:
 
   // Update the initial node
   useEffect(() => {
-    setNodes((nds) =>
-      nds.map((node) =>
+    // Only update if needed - check current node data first
+    setNodes((nds) => {
+      const initialNode = nds.find((node) => node.id === "0");
+      if (!initialNode) return nds;
+
+      // Check if the node already has these functions
+      if (
+        initialNode.data.onGenerate &&
+        initialNode.data.onGenerateBackward &&
+        initialNode.data.onUpdateAge &&
+        initialNode.data.onReshuffleContext
+      ) {
+        // The functions are already assigned, no need to update
+        return nds;
+      }
+
+      // Otherwise, update the node with the callbacks
+      return nds.map((node) =>
         node.id === "0"
           ? {
               ...node,
@@ -946,8 +964,8 @@ Return them in this exact JSON format, with no other text:
               },
             }
           : node
-      )
-    );
+      );
+    });
   }, [
     generateBackwardOptions,
     generateOptions,
@@ -986,7 +1004,7 @@ Return them in this exact JSON format, with no other text:
       // Apply the filtered changes
       onNodesChange(safeChanges);
     },
-    [setEdges, onNodesChange, generateOptions, setNodes]
+    [setEdges, onNodesChange]
   );
 
   // Handle node dragging
@@ -995,13 +1013,17 @@ Return them in this exact JSON format, with no other text:
       setNodes((nds) =>
         nds.map((n) => {
           if (n.id === node.id) {
-            return {
-              ...n,
-              data: {
-                ...n.data,
-                timelineValue: getTimelineValue(node.position.x),
-              },
-            };
+            // Only update if timeline value has actually changed
+            const newTimelineValue = getTimelineValue(node.position.x);
+            if (n.data.timelineValue !== newTimelineValue) {
+              return {
+                ...n,
+                data: {
+                  ...n.data,
+                  timelineValue: newTimelineValue,
+                },
+              };
+            }
           }
           return n;
         })
@@ -1016,13 +1038,17 @@ Return them in this exact JSON format, with no other text:
       setNodes((nds) =>
         nds.map((n) => {
           if (n.id === node.id) {
-            return {
-              ...n,
-              data: {
-                ...n.data,
-                timelineValue: getTimelineValue(node.position.x),
-              },
-            };
+            // Only update if timeline value has actually changed
+            const newTimelineValue = getTimelineValue(node.position.x);
+            if (n.data.timelineValue !== newTimelineValue) {
+              return {
+                ...n,
+                data: {
+                  ...n.data,
+                  timelineValue: newTimelineValue,
+                },
+              };
+            }
           }
           return n;
         })
@@ -1034,6 +1060,17 @@ Return them in this exact JSON format, with no other text:
   // Calculate results when edges change
   const onEdgesChangeWithCalculation = useCallback(
     async (changes: EdgeChange[]) => {
+      // Skip calculation if no relevant changes (add/remove)
+      const hasRelevantChanges = changes.some(
+        (change) => change.type === "add" || change.type === "remove"
+      );
+
+      if (!hasRelevantChanges) {
+        // Just apply changes without additional processing
+        onEdgesChange(changes);
+        return;
+      }
+
       // Get the edges that are being added or removed
       const edgeAdditions = changes
         .filter(
@@ -1095,6 +1132,10 @@ Return them in this exact JSON format, with no other text:
           operatorNode,
           generateOptions
         );
+      }
+
+      // Only update nodes if there are actual changes
+      if (affectedOperatorNodes.length > 0) {
         setNodes(currentNodes);
       }
     },
@@ -1164,37 +1205,96 @@ Return them in this exact JSON format, with no other text:
     [nodes, edges, setEdges, setNodes, generateOptions]
   );
 
-  const onConnectEnd = useCallback(
-    (
-      event: MouseEvent | TouchEvent,
-      connectionState: {
-        isValid: boolean | null;
-        fromNode: { id: string } | null;
-        handleId?: string;
-      }
-    ) => {
-      if (connectionState && !connectionState.isValid) {
-        const id = getId();
-        const { clientX, clientY } =
-          "changedTouches" in event ? event.changedTouches[0] : event;
+  // Add this function to check if a node is nearby the click position
+  const findNearbyNodes = (event: React.MouseEvent, threshold = 30) => {
+    // Convert screen coordinates to flow coordinates
+    const reactFlowBounds = document
+      .querySelector(".react-flow")
+      ?.getBoundingClientRect();
+    if (!reactFlowBounds) return null;
 
-        const position = screenToFlowPosition({
-          x: clientX,
-          y: clientY,
+    const position = {
+      x: event.clientX - reactFlowBounds.left,
+      y: event.clientY - reactFlowBounds.top,
+    };
+
+    // Find nodes near this position
+    return nodes.filter((node) => {
+      const dx = Math.abs(node.position.x - position.x);
+      const dy = Math.abs(node.position.y - position.y);
+      return dx < threshold && dy < threshold;
+    });
+  };
+
+  // Enhance the paneClick handler
+  const onPaneClick = (event: React.MouseEvent) => {
+    // First, check if there are any nodes near the click
+    const nearbyNodes = findNearbyNodes(event);
+
+    if (nearbyNodes && nearbyNodes.length > 0) {
+      // If there are nearby input nodes, check if we're clicking near their backward handle
+      const inputNodes = nearbyNodes.filter((node) => node.type === "input");
+
+      if (inputNodes.length > 0) {
+        // This might be a click near an input node's backward handle
+        // The actual handling will be done by the InputNode component's onClick handler
+        return;
+      }
+    }
+
+    // Continue with normal pane click behavior
+    setSelectedNodeId(null);
+  };
+
+  // Update onConnectStart to capture the source node information
+  const onConnectStart = useCallback(
+    (event: React.MouseEvent, params: OnConnectStartParams) => {
+      const { nodeId, handleId } = params;
+
+      // Set connecting node info
+      if (nodeId) {
+        setConnectingNodeId({
+          sourceId: nodeId,
+          sourceHandle: handleId || "",
+        });
+      }
+
+      if (handleId === "backward-source" && nodeId) {
+        // Mark this as a backward connection attempt
+        const updatedNodes = nodes.map((node) => {
+          if (node.id === nodeId) {
+            return {
+              ...node,
+              data: {
+                ...node.data,
+                backwardConnectionAttempted: true,
+              },
+            };
+          }
+          return node;
         });
 
-        // Get the source node to determine what type of node to create
-        const sourceNode = nodes.find(
-          (n) => n.id === (connectionState.fromNode?.id || "")
-        );
+        setNodes(updatedNodes);
+      }
+    },
+    [nodes, setNodes]
+  );
 
-        if (!sourceNode || !connectionState.fromNode) return;
+  // Update onConnectEnd to properly handle connection state
+  const onConnectEnd = useCallback(
+    (event: MouseEvent | TouchEvent) => {
+      // Only proceed if we have connecting node information
+      if (connectingNodeId) {
+        const sourceNodeId = connectingNodeId.sourceId;
+        const handleId = connectingNodeId.sourceHandle;
+        const sourceNode = nodes.find((n) => n.id === sourceNodeId);
 
-        const sourceNodeType = sourceNode.data.type;
-        const handleId = connectionState.handleId || "";
-
-        // Special case: if connecting from left handle of input node
-        if (sourceNodeType === "input" && handleId === "backward-source") {
+        // Special case: if connecting from left handle of input node but didn't connect anywhere
+        if (
+          sourceNode &&
+          handleId === "backward-source" &&
+          sourceNode.data.type === "input"
+        ) {
           // Get the input value from the source node
           const inputValue = String(sourceNode.data.value || "");
 
@@ -1204,89 +1304,134 @@ Return them in this exact JSON format, with no other text:
               console.error
             );
           }
-          return;
         }
+      }
 
-        const nodeData = getRandomNodeData(sourceNodeType, handleId);
-        const newNode: Node<NodeData> = {
-          id,
-          type: "custom",
-          position,
-          data: {
-            ...nodeData,
-            timelineValue: getTimelineValue(position.x),
+      // Reset connecting node info
+      setConnectingNodeId(null);
+    },
+    [connectingNodeId, generateBackwardOptions, nodes]
+  );
+
+  // Generate milestones
+  const generateMilestones = useCallback(
+    async (startGoal: string, endGoal: string, nodeId: string) => {
+      console.log("generateMilestones called with:", {
+        startGoal,
+        endGoal,
+        nodeId,
+      });
+      try {
+        // Set current milestone node ID
+        setNodes((nodes) =>
+          nodes.map((node) =>
+            node.id === nodeId
+              ? {
+                  ...node,
+                  data: {
+                    ...node.data,
+                    isLoading: true,
+                  },
+                }
+              : node
+          )
+        );
+
+        // Simplified prompt for faster generation with fewer milestones
+        const prompt = `
+        You're going to generate a very brief list of life milestones between two life goals.
+        These will be displayed on a timeline visualization.
+        
+        IMPORTANT: Each milestone MUST be 10 words or FEWER - extremely concise!
+        IMPORTANT: Return EXACTLY 3 milestones, no more, no less.
+        IMPORTANT: Return ONLY a JSON array of milestone strings, nothing else.
+        IMPORTANT: These should be practical, realistic life events.
+        
+        Start goal: ${startGoal}
+        End goal: ${endGoal}
+        
+        Example response format: ["First milestone here", "Second milestone here", "Third milestone here"]
+        `;
+
+        console.log("Sending request to /api/generate with prompt");
+        const response = await fetch("/api/generate", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
           },
-        };
+          body: JSON.stringify({
+            prompt,
+            model: "command",
+          }),
+        });
 
-        // Determine edge source and target based on handle
-        let source = connectionState.fromNode.id;
-        let target = id;
-        let sourceHandle = connectionState.handleId;
-        let targetHandle = undefined;
-
-        // If connecting from backward handle, reverse the edge direction
-        if (handleId === "backward-source") {
-          source = id;
-          target = connectionState.fromNode.id;
-          sourceHandle = undefined;
-          targetHandle = "backward-target";
+        if (!response.ok) {
+          throw new Error(`Error: ${response.status}`);
         }
 
-        const newEdge: Edge = {
-          id,
-          source,
-          target,
-          sourceHandle,
-          targetHandle,
-          type: "default",
-        };
+        const data = await response.json();
+        const rawResponse = data.text || "";
+        console.log("Raw API response:", rawResponse);
 
-        setNodes((nds) => {
-          const updatedNodes = [...nds, newNode];
-          // Calculate results for the new configuration
-          return calculateNodeResults(updatedNodes, [...edges, newEdge]);
-        });
-        setEdges((eds) => [...eds, newEdge]);
+        // Try to parse as JSON directly
+        let milestones: string[] = [];
+
+        try {
+          // First try to parse the entire response as JSON
+          milestones = JSON.parse(rawResponse);
+          console.log("Parsed milestones:", milestones);
+        } catch (e) {
+          console.error("JSON parse error:", e);
+
+          // Fallback: try to find a JSON array in the response using regex
+          try {
+            const jsonMatch = rawResponse.match(/\[.*?\]/);
+            if (jsonMatch) {
+              const jsonStr = jsonMatch[0];
+              milestones = JSON.parse(jsonStr);
+              console.log("Fallback parsed milestones:", milestones);
+            } else {
+              throw new Error("Could not find JSON array in response");
+            }
+          } catch (regexError) {
+            console.error("Regex extraction failed:", regexError);
+            throw new Error("Failed to parse milestones from response");
+          }
+        }
+
+        if (!Array.isArray(milestones) || milestones.length === 0) {
+          throw new Error("Invalid milestones format returned");
+        }
+
+        // Update the node with the milestones
+        setNodes((nodes) =>
+          nodes.map((node) => {
+            if (node.id === nodeId && node.data && node.type === "milestone") {
+              return {
+                ...node,
+                data: {
+                  ...node.data,
+                  milestones,
+                  startGoal,
+                  endGoal,
+                  isLoading: false,
+                },
+              };
+            }
+            return node;
+          })
+        );
+      } catch (error) {
+        console.error("Error generating milestones:", error);
+        toast.error("Failed to generate milestones. Please try again.");
       }
     },
-    [
-      screenToFlowPosition,
-      edges,
-      getTimelineValue,
-      nodes,
-      setNodes,
-      setEdges,
-      generateBackwardOptions,
-    ]
+    [setNodes]
   );
 
-  // Add the handleContextMenu function back
-  const handleContextMenu = useCallback(
-    (event: React.MouseEvent) => {
-      // Prevent default context menu
-      event.preventDefault();
-
-      // Get the position for the context menu
-      const bounds = reactFlowWrapper.current?.getBoundingClientRect();
-      if (!bounds) return;
-
-      const x = event.clientX - bounds.left;
-      const y = event.clientY - bounds.top;
-
-      // Convert screen position to flow position
-      const flowPosition = screenToFlowPosition({ x, y });
-
-      setContextMenu({
-        x: event.clientX,
-        y: event.clientY,
-        flowPosition,
-      });
-    },
-    [screenToFlowPosition]
-  );
-
-  return (
-    <div className="h-screen w-screen" ref={reactFlowWrapper}>
+  // Use memoization to prevent unnecessary re-renders of the ReactFlow component
+  const reactFlowElement = React.useMemo(
+    () => (
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -1317,11 +1462,25 @@ Return them in this exact JSON format, with no other text:
           minZoom: 0.8,
           maxZoom: 2.5,
         }}
-        onContextMenu={handleContextMenu}
         fitView
+        onContextMenu={(event) => {
+          event.preventDefault();
+          // Get the mouse position
+          const boundingRect =
+            reactFlowWrapper.current?.getBoundingClientRect();
+          if (boundingRect) {
+            const x = event.clientX - boundingRect.left;
+            const y = event.clientY - boundingRect.top;
+            const flowPosition = screenToFlowPosition({
+              x,
+              y,
+            });
+            // Open context menu at this position
+            setContextMenu({ x, y, flowPosition });
+          }
+        }}
       >
         <Background color="#fff" gap={20} style={{ zIndex: 0, opacity: 0.5 }} />
-        {/* <Timeline height={70} spacingFactor={1.5} /> */}
         {contextMenu && (
           <ContextMenu
             x={contextMenu.x}
@@ -1349,9 +1508,68 @@ Return them in this exact JSON format, with no other text:
               setNodes((nds) => [...nds, newNode]);
               setContextMenu(null);
             }}
+            onAddMilestoneNode={() => {
+              const newNodeId = getId();
+              console.log("Creating new milestone node with ID:", newNodeId);
+
+              // Create a properly bound generate milestones function
+              const boundGenerateMilestones = (
+                startGoal: string,
+                endGoal: string
+              ) => {
+                console.log(
+                  "Bound generate milestones called with:",
+                  startGoal,
+                  endGoal
+                );
+                return generateMilestones(startGoal, endGoal, newNodeId);
+              };
+
+              const newNode: Node<NodeData> = {
+                id: newNodeId,
+                type: "milestone",
+                position: contextMenu.flowPosition,
+                data: {
+                  type: "milestone",
+                  value: "Life Milestones",
+                  startGoal: "Graduate from university",
+                  endGoal: "Retire comfortably at age 65",
+                  timelineValue: getTimelineValue(contextMenu.flowPosition.x),
+                  onGenerateMilestones: boundGenerateMilestones,
+                },
+              };
+
+              console.log("Created milestone node:", newNode);
+              setNodes((nds) => [...nds, newNode]);
+              setContextMenu(null);
+            }}
           />
         )}
       </ReactFlow>
+    ),
+    [
+      nodes,
+      edges,
+      onNodesChangeWithProtection,
+      onEdgesChangeWithCalculation,
+      onConnect,
+      onConnectEnd,
+      onNodeDrag,
+      onNodeDragStop,
+      contextMenu,
+      screenToFlowPosition,
+      getTimelineValue,
+      generateOptions,
+      generateBackwardOptions,
+      handleUpdateAge,
+      reshuffleContext,
+      generateMilestones,
+    ]
+  );
+
+  return (
+    <div className="h-screen w-screen" ref={reactFlowWrapper}>
+      {reactFlowElement}
     </div>
   );
 }

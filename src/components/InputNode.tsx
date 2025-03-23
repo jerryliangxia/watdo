@@ -1,5 +1,12 @@
-import { memo, useState } from "react";
-import { Handle, Position, NodeProps, Node, NodeResizer } from "@xyflow/react";
+import { memo, useState, useEffect, useRef } from "react";
+import {
+  Handle,
+  Position,
+  NodeProps,
+  Node,
+  NodeResizer,
+  useReactFlow,
+} from "@xyflow/react";
 
 export interface InputNodeData extends Record<string, unknown> {
   type: "input";
@@ -18,6 +25,9 @@ const InputNode = memo(
     const [error, setError] = useState<string | null>(null);
     const [isHoveringAge, setIsHoveringAge] = useState(false);
     const [isDraggingAge, setIsDraggingAge] = useState(false);
+    const reactFlowInstance = useReactFlow();
+    const backwardHandleClicked = useRef(false);
+    const backwardHandleClickTimer = useRef<NodeJS.Timeout | null>(null);
 
     // Get the age value from timelineValue (defaults to 22 if not set)
     const age = data.timelineValue || 22;
@@ -308,22 +318,37 @@ const InputNode = memo(
           }}
         />
 
-        {/* Left handle for backward planning - source */}
-        <Handle
-          type="source"
-          position={Position.Left}
-          isConnectable={isConnectable}
-          id="backward-source"
-          className="!bg-orange-500"
-          style={{
-            left: "0px",
-            width: "12px",
-            height: "12px",
-            zIndex: 20,
+        {/* Left handle for backward planning with clickable wrapper */}
+        <div
+          className="absolute left-0 top-1/2 transform -translate-y-1/2 -translate-x-1/4 w-6 h-6 rounded-full flex items-center justify-center cursor-pointer hover:bg-orange-100 transition-colors"
+          style={{ zIndex: 19, left: "6px" }}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (
+              context.trim() &&
+              !isBackwardLoading &&
+              data.onGenerateBackward
+            ) {
+              handleGenerateBackward();
+            }
           }}
-        />
+        >
+          <Handle
+            type="source"
+            position={Position.Left}
+            isConnectable={isConnectable}
+            id="backward-source"
+            className="!bg-orange-500"
+            style={{
+              width: "12px",
+              height: "12px",
+              zIndex: 20,
+              border: "2px solid white",
+            }}
+          />
+        </div>
 
-        {/* Left handle for backward planning - target */}
+        {/* Left handle for backward planning - target (still needed for connections) */}
         <Handle
           type="target"
           position={Position.Left}
@@ -331,7 +356,7 @@ const InputNode = memo(
           id="backward-target"
           className="!bg-orange-500"
           style={{
-            left: "0px",
+            left: "10px",
             width: "12px",
             height: "12px",
             zIndex: 20,
