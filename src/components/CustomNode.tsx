@@ -1,4 +1,4 @@
-import { memo } from "react";
+import { memo, useState } from "react";
 import {
   Handle,
   Position,
@@ -21,6 +21,7 @@ export interface CustomNodeData extends Record<string, unknown> {
   isLoading?: boolean;
   generatingOptions?: boolean;
   onGenerate?: (context: string) => Promise<void>;
+  onUpdateAge?: (newAge: number) => void;
 }
 
 const OPERATORS = ["+", "-", "*", "%"];
@@ -31,6 +32,115 @@ const CustomNode = memo(
     // Number of current connections plus one empty slot for new connections
     const numHandles = (data.inputs?.length || 0) + 1;
     const { setNodes } = useReactFlow();
+    const [isHoveringAge, setIsHoveringAge] = useState(false);
+    const [isDraggingAge, setIsDraggingAge] = useState(false);
+
+    // Get the age value from timelineValue (defaults to 22 if not set)
+    const age = data.timelineValue || 22;
+
+    // Get color based on age ranges with smoother transitions
+    const getUrgencyColor = () => {
+      const normalizedAge = age % 100; // Convert to 0-99 range for cyclical colors
+
+      // Define our color stops with age ranges and hex colors
+      const colorStops = [
+        { age: 0, color: "#4ade80" }, // Green for <20s
+        { age: 20, color: "#4ade80" }, // Green for 20s
+        { age: 30, color: "#3b82f6" }, // Blue for 30s
+        { age: 40, color: "#6366f1" }, // Indigo for 40s
+        { age: 50, color: "#a855f7" }, // Purple for 50s
+        { age: 60, color: "#f97316" }, // Orange for 60s
+        { age: 70, color: "#facc15" }, // Yellow for 70s
+        { age: 80, color: "#4ade80" }, // Back to green for 80s+
+        { age: 100, color: "#4ade80" }, // Green to complete the cycle
+      ];
+
+      // Find the color stops that our age falls between
+      let lowerIndex = 0;
+      for (let i = 0; i < colorStops.length - 1; i++) {
+        if (
+          normalizedAge >= colorStops[i].age &&
+          normalizedAge < colorStops[i + 1].age
+        ) {
+          lowerIndex = i;
+          break;
+        }
+      }
+
+      const lowerStop = colorStops[lowerIndex];
+      const upperStop = colorStops[lowerIndex + 1];
+
+      // Calculate how far we are between the two color stops (0 to 1)
+      const range = upperStop.age - lowerStop.age;
+      const progress =
+        range === 0 ? 0 : (normalizedAge - lowerStop.age) / range;
+
+      // Convert hex colors to RGB for interpolation
+      const lowerRgb = hexToRgb(lowerStop.color);
+      const upperRgb = hexToRgb(upperStop.color);
+
+      // Interpolate between the two colors
+      const r = Math.round(lowerRgb.r + (upperRgb.r - lowerRgb.r) * progress);
+      const g = Math.round(lowerRgb.g + (upperRgb.g - lowerRgb.g) * progress);
+      const b = Math.round(lowerRgb.b + (upperRgb.b - lowerRgb.b) * progress);
+
+      return `rgb(${r}, ${g}, ${b})`;
+    };
+
+    // Helper function to convert hex to RGB
+    const hexToRgb = (hex: string) => {
+      // Remove # if present
+      hex = hex.replace("#", "");
+
+      // Parse hex values
+      const r = parseInt(hex.substring(0, 2), 16);
+      const g = parseInt(hex.substring(2, 4), 16);
+      const b = parseInt(hex.substring(4, 6), 16);
+
+      return { r, g, b };
+    };
+
+    const handleAgeChange = (xDelta: number) => {
+      if (data.timelineValue === undefined) return;
+
+      // Calculate the actual age change based on drag distance
+      // Use a smaller movement amount to allow for precise control
+      const ageChange = xDelta / 10;
+
+      // Round to the nearest integer
+      const newAge = Math.round(
+        Math.max(0, Math.min(99, data.timelineValue + ageChange))
+      );
+
+      // Only update if the age actually changed
+      if (newAge !== data.timelineValue) {
+        // Update node data directly
+        setNodes((nodes) =>
+          nodes.map((node) => {
+            if (node.id === id) {
+              return {
+                ...node,
+                data: {
+                  ...node.data,
+                  timelineValue: newAge,
+                },
+              };
+            }
+            return node;
+          })
+        );
+
+        // Also call onUpdateAge if provided
+        if (data.onUpdateAge) {
+          data.onUpdateAge(newAge);
+        }
+      }
+    };
+
+    const handleMouseDown = (e: React.MouseEvent) => {
+      e.stopPropagation(); // Prevent node dragging
+      setIsDraggingAge(true);
+    };
 
     // Create an array of positions for the input handles
     const getHandlePosition = (index: number, total: number) => {
@@ -140,8 +250,8 @@ const CustomNode = memo(
                 : data.value === "*"
                 ? "#E9D8FD" // purple-200
                 : "#FEF3C7" // amber-200
-              : "#BEE3F8" // blue-200
-          }`,
+              : getUrgencyColor()
+          }`, // Use urgency color for value nodes
         }}
       >
         <NodeResizer
@@ -152,15 +262,36 @@ const CustomNode = memo(
           lineClassName={`border-${colors.border}`}
         />
 
-        {/* Node ID and Timeline value display */}
-        <div className="absolute -top-2 -right-2 flex gap-1">
-          <div className="text-[10px] px-1 rounded bg-gray-700 text-white opacity-75">
-            {data.timelineValue ?? 0}
-          </div>
-          <div className="text-[10px] px-1 rounded bg-gray-700 text-white opacity-75">
-            #{id}
-          </div>
+        {/* Age Badge */}
+        <div
+          className="absolute top-0 right-0 transform translate-x-1/2 -translate-y-1/2 rounded-full flex items-center justify-center font-bold text-xs z-30 cursor-pointer transition-all duration-200"
+          style={{
+            backgroundColor: getUrgencyColor(),
+            color: "white",
+            width: isHoveringAge ? "auto" : "24px",
+            height: "24px",
+            padding: isHoveringAge ? "0 8px" : "0",
+            boxShadow: "0 2px 4px rgba(0, 0, 0, 0.2)",
+          }}
+          onMouseEnter={() => setIsHoveringAge(true)}
+          onMouseLeave={() => !isDraggingAge && setIsHoveringAge(false)}
+          onMouseDown={handleMouseDown}
+          onMouseUp={() => setIsDraggingAge(false)}
+          onMouseMove={(e) => {
+            if (isDraggingAge) {
+              handleAgeChange(e.movementX);
+            }
+          }}
+        >
+          {isHoveringAge ? `Age: ${age}` : age}
         </div>
+
+        {/* Tooltip for dragging instructions */}
+        {isHoveringAge && !isDraggingAge && (
+          <div className="absolute top-6 right-0 transform translate-x-1/2 bg-gray-800 text-white px-2 py-1 rounded text-xs z-40 whitespace-nowrap">
+            Drag to adjust age
+          </div>
+        )}
 
         {/* Input handles for operators */}
         {isOperator && (

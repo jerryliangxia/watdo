@@ -34,6 +34,7 @@ type NodeData = {
   isLoading?: boolean;
   generatingOptions?: boolean;
   onGenerateBackward?: (context: string) => Promise<void>;
+  onUpdateAge?: (newAge: number) => void;
   [key: string]: unknown;
 };
 
@@ -316,6 +317,36 @@ function Flow() {
 
       const { sourceNode } = nodeInfo;
 
+      // Get the age value to determine context
+      const age = sourceNode.data.timelineValue || 22;
+      const normalizedAge = age % 100; // Normalize to 0-99 cycle
+
+      // Customize prompt based on age
+      let ageContext = "";
+
+      if (normalizedAge < 30) {
+        ageContext =
+          "You are in your 20s. You have plenty of time for long-term planning.";
+      } else if (normalizedAge < 40) {
+        ageContext =
+          "You are in your 30s. You should balance immediate needs with future planning.";
+      } else if (normalizedAge < 50) {
+        ageContext =
+          "You are in your 40s. You should focus on career advancement and financial security.";
+      } else if (normalizedAge < 60) {
+        ageContext =
+          "You are in your 50s. You should prepare for retirement and focus on health.";
+      } else if (normalizedAge < 70) {
+        ageContext =
+          "You are in your 60s. You should transition to retirement and maintain health.";
+      } else if (normalizedAge < 80) {
+        ageContext =
+          "You are in your 70s. You should focus on health and enjoying retirement.";
+      } else {
+        ageContext =
+          "You are in your 80s or older. You should focus on health, family and legacy.";
+      }
+
       const response = await fetch("https://api.cohere.ai/v1/generate", {
         method: "POST",
         headers: {
@@ -325,8 +356,8 @@ function Flow() {
         body: JSON.stringify({
           model: "command",
           prompt: `Based on this situation: "${context}"
-
-Generate 3 brief next actions (max 15 words each).
+${ageContext ? ageContext + "\n" : ""}
+Generate 3 brief next actions (max 15 words each) that are appropriate for someone of this age.
 Return them in this exact JSON format, with no other text:
 [
   "First brief action",
@@ -523,6 +554,36 @@ Return them in this exact JSON format, with no other text:
 
       const { sourceNode } = nodeInfo;
 
+      // Get the age value to determine context
+      const age = sourceNode.data.timelineValue || 22;
+      const normalizedAge = age % 100; // Normalize to 0-99 cycle
+
+      // Customize prompt based on age
+      let ageContext = "";
+
+      if (normalizedAge < 30) {
+        ageContext =
+          "You are in your 20s. You have plenty of time for long-term planning.";
+      } else if (normalizedAge < 40) {
+        ageContext =
+          "You are in your 30s. You should balance immediate needs with future planning.";
+      } else if (normalizedAge < 50) {
+        ageContext =
+          "You are in your 40s. You should focus on career advancement and financial security.";
+      } else if (normalizedAge < 60) {
+        ageContext =
+          "You are in your 50s. You should prepare for retirement and focus on health.";
+      } else if (normalizedAge < 70) {
+        ageContext =
+          "You are in your 60s. You should transition to retirement and maintain health.";
+      } else if (normalizedAge < 80) {
+        ageContext =
+          "You are in your 70s. You should focus on health and enjoying retirement.";
+      } else {
+        ageContext =
+          "You are in your 80s or older. You should focus on health, family and legacy.";
+      }
+
       const response = await fetch("https://api.cohere.ai/v1/generate", {
         method: "POST",
         headers: {
@@ -532,8 +593,9 @@ Return them in this exact JSON format, with no other text:
         body: JSON.stringify({
           model: "command",
           prompt: `Given this future situation: "${context}"
-
+${ageContext ? ageContext + "\n" : ""}
 Generate 3 specific prerequisite actions that would need to be taken BEFORE this situation to make it happen (max 15 words each).
+These should be appropriate for someone of this age.
 Return them in this exact JSON format, with no other text:
 [
   "First prerequisite action needed before this situation",
@@ -616,17 +678,16 @@ Return them in this exact JSON format, with no other text:
             // Place all nodes at the same distance to the left
             const xPos = latestSourceNode.position.x - distance;
 
-            // Calculate vertical position that creates a balanced layout
-            // If we have 3 nodes, we want to place them at -75px, 0px, and +75px relative to the input
-            const nodeCount = options.length;
-            const spacing = 75; // pixels between each node vertically
-            const totalHeight = spacing * (nodeCount - 1); // total height of the node arrangement
-            const startY = latestSourceNode.position.y - totalHeight / 2; // starting y to center the arrangement
+            // Calculate vertical position with more spacing between nodes
+            // Increase spacing from 75px to 150px for better visual separation
+            const spacing = 150; // increased from 75px to 150px
+            const totalHeight = spacing * (options.length - 1);
+            const startY = latestSourceNode.position.y - totalHeight / 2;
             const yPos = startY + index * spacing;
 
             // Calculate age value for backward nodes (all one step before the input node)
             const currentAge = latestSourceNode.data.timelineValue || 22;
-            const backwardAge = Math.max(20, currentAge - 1);
+            const backwardAge = Math.max(20, currentAge - 5); // Reduce by 5 years for backward planning
 
             return {
               id,
@@ -680,7 +741,28 @@ Return them in this exact JSON format, with no other text:
     }
   };
 
-  // Modify the initial node to include the generate function
+  // Handle manual age updates from dragging the age badge
+  const handleUpdateAge = useCallback(
+    (nodeId: string, newAge: number) => {
+      setNodes((nds) =>
+        nds.map((n) => {
+          if (n.id === nodeId) {
+            return {
+              ...n,
+              data: {
+                ...n.data,
+                timelineValue: newAge,
+              },
+            };
+          }
+          return n;
+        })
+      );
+    },
+    [setNodes]
+  );
+
+  // Update the initial node
   useEffect(() => {
     setNodes((nds) =>
       nds.map((node) =>
@@ -693,6 +775,8 @@ Return them in this exact JSON format, with no other text:
                   generateOptions(context, node.id),
                 onGenerateBackward: (context: string) =>
                   generateBackwardOptions(context, node.id),
+                onUpdateAge: (newAge: number) =>
+                  handleUpdateAge(node.id, newAge),
               },
             }
           : node
@@ -735,12 +819,15 @@ Return them in this exact JSON format, with no other text:
 
   // Add function to calculate timeline value from x position
   const getTimelineValue = useCallback((xPos: number) => {
-    // Map x position to timeline value (20-24 range)
-    // 0 position = 20, 400 position = 24 (100px per unit)
-    const value = Math.round(20 + xPos / 100);
+    // Base age is 20
+    const baseAge = 20;
+
+    // Map x position to timeline value (20-99 range)
+    // Every 100px increment represents roughly one decade
+    const offset = Math.round(xPos / 100);
 
     // Clamp value between min and max
-    return Math.max(20, Math.min(24, value));
+    return Math.max(baseAge, Math.min(99, baseAge + offset));
   }, []);
 
   // Handle node dragging
@@ -1046,6 +1133,8 @@ Return them in this exact JSON format, with no other text:
                     generateOptions(context, newNodeId),
                   onGenerateBackward: (context: string) =>
                     generateBackwardOptions(context, newNodeId),
+                  onUpdateAge: (newAge: number) =>
+                    handleUpdateAge(newNodeId, newAge),
                 },
               };
               setNodes((nds) => [...nds, newNode]);
