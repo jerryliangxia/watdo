@@ -33,6 +33,7 @@ type NodeData = {
   onGenerate?: (context: string) => Promise<void>;
   isLoading?: boolean;
   generatingOptions?: boolean;
+  onGenerateBackward?: (context: string) => Promise<void>;
   [key: string]: unknown;
 };
 
@@ -233,9 +234,23 @@ function calculateNodeResults(nodes: Node<NodeData>[], edges: Edge[]) {
   });
 }
 
-function getRandomNodeData(sourceNodeType?: string): NodeData {
-  // If dragging from a value or input node, always create an operator node
-  if (sourceNodeType === "value" || sourceNodeType === "input") {
+function getRandomNodeData(
+  sourceNodeType?: string,
+  handleId?: string
+): NodeData {
+  // If dragging from the left handle of an input node, create a "precursor" value node
+  if (sourceNodeType === "input" && handleId === "backward") {
+    return {
+      type: "value",
+      value: "Prerequisite step...",
+    };
+  }
+
+  // If dragging from a value or input node (right handle), always create an operator node
+  if (
+    sourceNodeType === "value" ||
+    (sourceNodeType === "input" && handleId !== "backward")
+  ) {
     const operators = ["+", "-", "*", "%"];
     return {
       type: "operator",
@@ -270,25 +285,36 @@ function Flow() {
 
   // Add Cohere API call function
   const generateOptions = async (context: string, nodeId: string) => {
-    try {
-      if (!process.env.NEXT_PUBLIC_COHERE_API_KEY) {
-        throw new Error("Cohere API key is not configured");
-      }
+    if (!process.env.NEXT_PUBLIC_COHERE_API_KEY) {
+      console.error("Cohere API key is not configured");
+      return;
+    }
 
-      // Set loading state
-      setNodes((nds) =>
-        nds.map((n) =>
-          n.id === nodeId
-            ? { ...n, data: { ...n.data, generatingOptions: true } }
-            : n
-        )
+    try {
+      // Get node info and set loading state in a single operation
+      const nodeInfo = await new Promise<{ sourceNode: Node<NodeData> }>(
+        (resolve, reject) => {
+          setNodes((currentNodes) => {
+            const sourceNode = currentNodes.find((n) => n.id === nodeId);
+            if (!sourceNode) {
+              reject(new Error("Source node not found"));
+              return currentNodes; // Return unchanged state
+            }
+
+            // Mark as loading and capture node info
+            resolve({ sourceNode });
+
+            // Set loading state
+            return currentNodes.map((n) =>
+              n.id === nodeId
+                ? { ...n, data: { ...n.data, generatingOptions: true } }
+                : n
+            );
+          });
+        }
       );
 
-      // Find the operator node by ID
-      const sourceOperatorNode = nodes.find((n) => n.id === nodeId);
-      if (!sourceOperatorNode) {
-        throw new Error("Source operator node not found");
-      }
+      const { sourceNode } = nodeInfo;
 
       const response = await fetch("https://api.cohere.ai/v1/generate", {
         method: "POST",
@@ -362,84 +388,95 @@ Return them in this exact JSON format, with no other text:
         throw new Error("Invalid options format from Cohere API");
       }
 
-      // Create new nodes for each option
-      const newNodes: Node<NodeData>[] = options.map(
-        (option: string, index: number) => {
-          const id = getId();
-          // Calculate positions in a forward-facing arc
-          const angle = (Math.PI / 6) * (index - 1); // Less spread (-30 to 30 degrees)
-          const distance = 350; // Increased safe distance
-
-          // Calculate position - ensure x is always positive (forward)
-          const xPos =
-            sourceOperatorNode.position.x + Math.cos(angle) * distance;
-          const yPos =
-            sourceOperatorNode.position.y + Math.sin(angle) * distance;
-
-          // Check for potential collisions with existing nodes
-          const nodeWidth = 250; // Approximate node width
-          const nodeHeight = 150; // Approximate node height
-
-          // Create some padding around the node
-          const nodePadding = 50;
-
-          // Find if this position would collide with any existing node
-          const wouldCollide = nodes.some((existingNode) => {
-            // Skip checking against the source node itself
-            if (existingNode.id === sourceOperatorNode.id) return false;
-
-            const distX = Math.abs(existingNode.position.x - xPos);
-            const distY = Math.abs(existingNode.position.y - yPos);
-
-            // If the distance is less than the combined half widths/heights + padding, they collide
-            return (
-              distX < nodeWidth + nodePadding &&
-              distY < nodeHeight + nodePadding
-            );
-          });
-
-          // If collision detected, adjust the distance outward
-          const finalDistance = wouldCollide ? distance * 1.5 : distance;
-          const finalXPos =
-            sourceOperatorNode.position.x + Math.cos(angle) * finalDistance;
-          const finalYPos =
-            sourceOperatorNode.position.y + Math.sin(angle) * finalDistance;
-
-          return {
-            id,
-            type: "custom",
-            data: {
-              type: "value",
-              value: option,
-              timelineValue: getTimelineValue(finalXPos),
-            },
-            position: {
-              x: finalXPos,
-              y: finalYPos,
-            },
-          };
+      // Create new nodes with the latest node position
+      setNodes((currentNodes) => {
+        // Get the latest version of the source node
+        const latestSourceNode = currentNodes.find((n) => n.id === nodeId);
+        if (!latestSourceNode) {
+          // This shouldn't happen since we already checked earlier
+          console.error("Source node disappeared during processing");
+          return currentNodes;
         }
-      );
 
-      // Add new nodes and edges
-      setNodes((nds) => {
-        const updatedNodes = [...nds, ...newNodes].map((n) =>
+        // Create new nodes for each option
+        const newNodes: Node<NodeData>[] = options.map(
+          (option: string, index: number) => {
+            const id = getId();
+            // Calculate positions in a forward-facing arc
+            const angle = (Math.PI / 6) * (index - 1); // Less spread (-30 to 30 degrees)
+            const distance = 350; // Increased safe distance
+
+            // Calculate position - ensure x is always positive (forward)
+            const xPos =
+              latestSourceNode.position.x + Math.cos(angle) * distance;
+            const yPos =
+              latestSourceNode.position.y + Math.sin(angle) * distance;
+
+            // Check for potential collisions with existing nodes
+            const nodeWidth = 250; // Approximate node width
+            const nodeHeight = 150; // Approximate node height
+
+            // Create some padding around the node
+            const nodePadding = 50;
+
+            // Find if this position would collide with any existing node
+            const wouldCollide = currentNodes.some((existingNode) => {
+              // Skip checking against the source node itself
+              if (existingNode.id === latestSourceNode.id) return false;
+
+              const distX = Math.abs(existingNode.position.x - xPos);
+              const distY = Math.abs(existingNode.position.y - yPos);
+
+              // If the distance is less than the combined half widths/heights + padding, they collide
+              return (
+                distX < nodeWidth + nodePadding &&
+                distY < nodeHeight + nodePadding
+              );
+            });
+
+            // If collision detected, adjust the distance outward
+            const finalDistance = wouldCollide ? distance * 1.5 : distance;
+            const finalXPos =
+              latestSourceNode.position.x + Math.cos(angle) * finalDistance;
+            const finalYPos =
+              latestSourceNode.position.y + Math.sin(angle) * finalDistance;
+
+            return {
+              id,
+              type: "custom",
+              data: {
+                type: "value",
+                value: option,
+                timelineValue: getTimelineValue(finalXPos),
+              },
+              position: {
+                x: finalXPos,
+                y: finalYPos,
+              },
+            };
+          }
+        );
+
+        // Add new nodes and update loading state
+        const updatedNodes = [...currentNodes, ...newNodes].map((n) =>
           n.id === nodeId
             ? { ...n, data: { ...n.data, generatingOptions: false } }
             : n
         );
+
+        // Create edges for the new nodes
+        setEdges((eds) => [
+          ...eds,
+          ...newNodes.map((node) => ({
+            id: `e${node.id}`,
+            source: latestSourceNode.id,
+            target: node.id,
+            type: "default",
+          })),
+        ]);
+
         return updatedNodes;
       });
-
-      setEdges((eds) => [
-        ...eds,
-        ...newNodes.map((node) => ({
-          id: `e${node.id}`,
-          source: sourceOperatorNode.id,
-          target: node.id,
-          type: "default",
-        })),
-      ]);
     } catch (error) {
       // Clear loading state on error
       setNodes((nds) =>
@@ -450,7 +487,196 @@ Return them in this exact JSON format, with no other text:
         )
       );
       console.error("Error generating options:", error);
-      throw error;
+    }
+  };
+
+  // Add backward planning function
+  const generateBackwardOptions = async (context: string, nodeId: string) => {
+    if (!process.env.NEXT_PUBLIC_COHERE_API_KEY) {
+      console.error("Cohere API key is not configured");
+      return;
+    }
+
+    try {
+      // Get node info and set loading state in a single operation
+      const nodeInfo = await new Promise<{ sourceNode: Node<NodeData> }>(
+        (resolve, reject) => {
+          setNodes((currentNodes) => {
+            const sourceNode = currentNodes.find((n) => n.id === nodeId);
+            if (!sourceNode) {
+              reject(new Error("Source node not found"));
+              return currentNodes; // Return unchanged state
+            }
+
+            // Mark as loading and capture node info
+            resolve({ sourceNode });
+
+            // Set loading state
+            return currentNodes.map((n) =>
+              n.id === nodeId
+                ? { ...n, data: { ...n.data, generatingOptions: true } }
+                : n
+            );
+          });
+        }
+      );
+
+      const { sourceNode } = nodeInfo;
+
+      const response = await fetch("https://api.cohere.ai/v1/generate", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${process.env.NEXT_PUBLIC_COHERE_API_KEY}`,
+        },
+        body: JSON.stringify({
+          model: "command",
+          prompt: `Given this future situation: "${context}"
+
+Generate 3 specific prerequisite actions that would need to be taken BEFORE this situation to make it happen (max 15 words each).
+Return them in this exact JSON format, with no other text:
+[
+  "First prerequisite action needed before this situation",
+  "Second prerequisite action needed before this situation",
+  "Third prerequisite action needed before this situation"
+]`,
+          max_tokens: 200,
+          temperature: 0.7,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(
+          `Failed to generate backward options: ${response.status} ${
+            response.statusText
+          }${errorData.message ? ` - ${errorData.message}` : ""}`
+        );
+      }
+
+      const data = await response.json();
+
+      if (!data.generations?.[0]?.text) {
+        throw new Error("Invalid response format from Cohere API");
+      }
+
+      let options;
+      try {
+        // Clean and prepare the text for JSON parsing
+        let cleanText = data.generations[0].text
+          .trim()
+          .replace(/[\n\r]/g, "")
+          .replace(/\s+/g, " ");
+
+        // If the text starts with something other than [, try to find the first [
+        const startBracket = cleanText.indexOf("[");
+        if (startBracket !== -1) {
+          cleanText = cleanText.slice(startBracket);
+        }
+
+        // If the text ends with something other than ], try to find the last ]
+        const endBracket = cleanText.lastIndexOf("]");
+        if (endBracket !== -1) {
+          cleanText = cleanText.slice(0, endBracket + 1);
+        }
+
+        options = JSON.parse(cleanText);
+      } catch (parseError) {
+        console.error(
+          "Failed to parse options:",
+          parseError,
+          "Raw text:",
+          data.generations[0].text
+        );
+        throw new Error("Invalid JSON format in API response");
+      }
+
+      if (!Array.isArray(options) || options.length !== 3) {
+        throw new Error("Invalid options format from Cohere API");
+      }
+
+      // Create new nodes using the latest nodes state
+      setNodes((currentNodes) => {
+        // Get the latest version of the source node
+        const latestSourceNode = currentNodes.find((n) => n.id === nodeId);
+        if (!latestSourceNode) {
+          console.error("Source node disappeared during processing");
+          return currentNodes;
+        }
+
+        // Create new nodes for each option - placed to the LEFT of the input node
+        const newNodes: Node<NodeData>[] = options.map(
+          (option: string, index: number) => {
+            const id = getId();
+
+            // Base distance from input node
+            const distance = 350; // Horizontal distance to the left
+
+            // For horizontal spacing, use a simple pattern:
+            // Place all nodes at the same distance to the left
+            const xPos = latestSourceNode.position.x - distance;
+
+            // Calculate vertical position that creates a balanced layout
+            // If we have 3 nodes, we want to place them at -75px, 0px, and +75px relative to the input
+            const nodeCount = options.length;
+            const spacing = 75; // pixels between each node vertically
+            const totalHeight = spacing * (nodeCount - 1); // total height of the node arrangement
+            const startY = latestSourceNode.position.y - totalHeight / 2; // starting y to center the arrangement
+            const yPos = startY + index * spacing;
+
+            // Calculate age value for backward nodes (all one step before the input node)
+            const currentAge = latestSourceNode.data.timelineValue || 22;
+            const backwardAge = Math.max(20, currentAge - 1);
+
+            return {
+              id,
+              type: "custom",
+              data: {
+                type: "value",
+                value: option,
+                timelineValue: backwardAge,
+              },
+              position: {
+                x: xPos,
+                y: yPos,
+              },
+            };
+          }
+        );
+
+        // Add new nodes and update loading state
+        const updatedNodes = [...currentNodes, ...newNodes].map((n) =>
+          n.id === nodeId
+            ? { ...n, data: { ...n.data, generatingOptions: false } }
+            : n
+        );
+
+        // Create edges between generated nodes and to the input node
+        setEdges((eds) => {
+          // Connect all backward nodes directly to the input node's backward-target handle
+          const newEdges = newNodes.map((node) => ({
+            id: `e${node.id}-to-input`,
+            source: node.id,
+            target: latestSourceNode.id,
+            targetHandle: "backward-target", // Specify the left target handle on the input node
+            type: "default",
+          }));
+
+          return [...eds, ...newEdges];
+        });
+
+        return updatedNodes;
+      });
+    } catch (error) {
+      // Clear loading state on error
+      setNodes((nds) =>
+        nds.map((n) =>
+          n.id === nodeId
+            ? { ...n, data: { ...n.data, generatingOptions: false } }
+            : n
+        )
+      );
+      console.error("Error generating backward options:", error);
     }
   };
 
@@ -465,6 +691,8 @@ Return them in this exact JSON format, with no other text:
                 ...node.data,
                 onGenerate: (context: string) =>
                   generateOptions(context, node.id),
+                onGenerateBackward: (context: string) =>
+                  generateBackwardOptions(context, node.id),
               },
             }
           : node
@@ -606,6 +834,19 @@ Return them in this exact JSON format, with no other text:
 
       if (!targetNode || !sourceNode) return;
 
+      // Check if connecting to input node's backward target handle
+      const isBackwardConnection =
+        targetNode.type === "input" &&
+        params.targetHandle === "backward-target";
+
+      // For backward connections, we always allow them
+      if (isBackwardConnection) {
+        const newEdges = addEdge(params, edges);
+        setEdges(newEdges);
+        return;
+      }
+
+      // Regular connection logic for other handles
       const isDuplicateConnection = targetNode.data.history?.includes(
         sourceNode.id
       );
@@ -665,9 +906,27 @@ Return them in this exact JSON format, with no other text:
         const sourceNode = nodes.find(
           (n) => n.id === connectionState.fromNode.id
         );
-        const sourceNodeType = sourceNode?.data.type;
 
-        const nodeData = getRandomNodeData(sourceNodeType);
+        if (!sourceNode) return;
+
+        const sourceNodeType = sourceNode.data.type;
+        const handleId = connectionState.handleId || "";
+
+        // Special case: if connecting from left handle of input node
+        if (sourceNodeType === "input" && handleId === "backward-source") {
+          // Get the input value from the source node
+          const inputValue = String(sourceNode.data.value || "");
+
+          if (inputValue.trim()) {
+            // Generate backward options based on the input value
+            generateBackwardOptions(inputValue, sourceNode.id).catch(
+              console.error
+            );
+          }
+          return;
+        }
+
+        const nodeData = getRandomNodeData(sourceNodeType, handleId);
         const newNode: Node<NodeData> = {
           id,
           type: "custom",
@@ -678,12 +937,27 @@ Return them in this exact JSON format, with no other text:
           },
         };
 
+        // Determine edge source and target based on handle
+        let source = connectionState.fromNode.id;
+        let target = id;
+        let sourceHandle = connectionState.handleId;
+        let targetHandle = null;
+
+        // If connecting from backward handle, reverse the edge direction
+        if (handleId === "backward-source") {
+          source = id;
+          target = connectionState.fromNode.id;
+          sourceHandle = null;
+          targetHandle = "backward-target";
+        }
+
         const newEdge: Edge = {
           id,
-          source: connectionState.fromNode.id,
-          target: id,
+          source,
+          target,
+          sourceHandle,
+          targetHandle,
           type: "default",
-          sourceHandle: connectionState.handleId,
         };
 
         setNodes((nds) => {
@@ -767,8 +1041,11 @@ Return them in this exact JSON format, with no other text:
                 data: {
                   type: "input",
                   value: "",
+                  timelineValue: getTimelineValue(contextMenu.flowPosition.x),
                   onGenerate: (context: string) =>
                     generateOptions(context, newNodeId),
+                  onGenerateBackward: (context: string) =>
+                    generateBackwardOptions(context, newNodeId),
                 },
               };
               setNodes((nds) => [...nds, newNode]);
