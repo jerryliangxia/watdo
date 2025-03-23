@@ -194,7 +194,7 @@ const InputNode = memo(
         {/* Tooltip for dragging instructions */}
         {isHoveringAge && !isDraggingAge && (
           <div className="absolute top-6 right-0 transform translate-x-1/2 bg-gray-800 text-white px-2 py-1 rounded text-xs z-40 whitespace-nowrap">
-            Drag to adjust age
+            Drag node to adjust age
           </div>
         )}
 
@@ -263,7 +263,7 @@ const InputNode = memo(
               </button>
               <div className="absolute bottom-full left-0 mb-1 hidden group-hover:block">
                 <div className="bg-gray-900 text-white text-xs rounded py-1 px-2 whitespace-nowrap">
-                  Press{" "}
+                  {" "}
                   <kbd className="bg-gray-700 px-1 rounded">Shift+Enter</kbd>
                 </div>
               </div>
@@ -287,7 +287,7 @@ const InputNode = memo(
               </button>
               <div className="absolute bottom-full right-0 mb-1 hidden group-hover:block">
                 <div className="bg-gray-900 text-white text-xs rounded py-1 px-2 whitespace-nowrap">
-                  Press <kbd className="bg-gray-700 px-1 rounded">Enter</kbd>
+                  <kbd className="bg-gray-700 px-1 rounded">Enter</kbd>
                 </div>
               </div>
             </div>
